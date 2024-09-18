@@ -1,0 +1,7 @@
+<launch>
+    <arg name="apriltag_family" default="tagStandard41h12"/>
+    <node pkg="ros2_orb_slam3" exec="apriltag_node"> 
+        <param name="apriltag_family" value="$(var apriltag_family)"/>
+    </node>
+    <include file="$(find-pkg-share realsense2_camera)/launch/rs_launch.py"/>
+</launch>

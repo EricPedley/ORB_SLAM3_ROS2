@@ -1,0 +1,9 @@
+**jukit**
+*.mp4
+*.csv
+*.db3
+metadata.yaml
+**build**
+ORBvoc.txt
+bags/
+videos/

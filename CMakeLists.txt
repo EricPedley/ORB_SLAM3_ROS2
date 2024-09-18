@@ -1,15 +1,179 @@
 cmake_minimum_required(VERSION 3.8)
-project(ORB_SLAM3_ROS2)
+project(orb_slam3_ros2)
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   add_compile_options(-Wall -Wextra -Wpedantic)
 endif()
+# set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -w")
+# set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -w")
+
+# list(APPEND CMAKE_PREFIX_PATH "home/graham/prefix/eigen3.3")
+# set(Eigen3_DIR "~/prefix/eigen3.3/share/eigen3.3/cmake")
+set(ENV{PROJECT_PATH} "${project_path}")
+add_definitions(-DPROJECT_PATH="${project_path}")
 
 # find dependencies
 find_package(ament_cmake REQUIRED)
-# uncomment the following section in order to fill in
-# further dependencies manually.
-# find_package(<dependency> REQUIRED)
+find_package(rclcpp REQUIRED)
+find_package(std_msgs REQUIRED)
+find_package(sensor_msgs REQUIRED)
+find_package(tf2 REQUIRED)
+find_package(tf2_ros REQUIRED)
+find_package(octomap_server REQUIRED)
+find_package(nav_msgs REQUIRED)
+find_package(apriltag REQUIRED)
+find_package(apriltag_ros REQUIRED)
+find_package(apriltag_msgs REQUIRED)
+find_package(cv_bridge REQUIRED)
+find_package(OpenCV 4.4 REQUIRED)
+# find_package(Eigen3 3.3 REQUIRED) # Matched with Sophus
+find_package(Pangolin REQUIRED)
+find_package(image_transport REQUIRED)
+find_package(pcl_ros REQUIRED)
+find_package(pcl_conversions REQUIRED)
+
+if(NOT OpenCV_FOUND)
+  message(FATAL_ERROR "OpenCV not found")
+endif()
+
+set(THIS_PACKAGE_INCLUDE_DEPENDS
+  rclcpp
+  std_msgs
+  sensor_msgs
+  tf2
+  tf2_ros
+  octomap_server
+  nav_msgs
+  apriltag
+  apriltag_ros
+  apriltag_msgs
+  cv_bridge
+  OpenCV
+  # Eigen3
+  Pangolin
+  image_transport
+  pcl_ros
+  pcl_conversions
+)
+
+# if(Eigen3_FOUND)
+#     message(STATUS "Found Eigen3: ${Eigen3_INCLUDE_DIRS}")
+#     message(STATUS "Eigen3 version: ${Eigen3_VERSION}")
+# else()
+#     message(FATAL_ERROR "Could not find Eigen3")
+# endif()
+
+if(NOT CMAKE_BUILD_TYPE)        # If no build type is set, set one
+  set(CMAKE_BUILD_TYPE "Debug" CACHE STRING "Type of build." FORCE)
+endif()
+
+
+# # Add executable
+# add_executable(example_mono_node_cpp
+#   src/mono_example.cpp
+#   src/common.cpp
+# )
+
+# add_executable(mono_node_cpp
+#   src/mono_realsense.cpp
+# )
+#
+# add_executable(imu_mono_node_cpp
+#   src/imu_mono_realsense.cpp
+# )
+
+add_executable(capture_video
+    src/capture_realsense_video.cpp
+)
+
+add_executable(visualize_point_cloud
+    src/visualize_point_cloud.cpp
+)
+
+add_executable(apriltag_node
+    src/apriltag_node.cpp
+)
+
+# ament_target_dependencies(example_mono_node_cpp
+#   PUBLIC ${THIS_PACKAGE_INCLUDE_DEPENDS}
+# )
+
+# ament_target_dependencies(mono_node_cpp
+#   PUBLIC ${THIS_PACKAGE_INCLUDE_DEPENDS}
+# )
+
+# ament_target_dependencies(imu_mono_node_cpp
+#   PUBLIC ${THIS_PACKAGE_INCLUDE_DEPENDS}
+# )
+
+ament_target_dependencies(capture_video
+  PUBLIC ${THIS_PACKAGE_INCLUDE_DEPENDS}
+)
+
+ament_target_dependencies(visualize_point_cloud
+  PUBLIC ${THIS_PACKAGE_INCLUDE_DEPENDS}
+)
+
+ament_target_dependencies(apriltag_node
+  PUBLIC ${THIS_PACKAGE_INCLUDE_DEPENDS}
+)
+
+# set(ORB_SLAM3_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../../../other_repos/ORB_SLAM3)
+# add_subdirectory(${ORB_SLAM3_DIR} ORB_SLAM3)
+
+target_link_libraries(apriltag_node PUBLIC apriltag::apriltag)
+# target_link_libraries(imu_mono_node_cpp PUBLIC ORB_SLAM3)
+# target_link_libraries(mono_node_cpp PUBLIC ORB_SLAM3)
+# target_link_libraries(example_mono_node_cpp PUBLIC ORB_SLAM3)
+
+include_directories(
+#   ${ORB_SLAM3_DIR}/include
+#   ${ORB_SLAM3_DIR}/Thirdparty/DBoW2
+#   ${ORB_SLAM3_DIR}/Thirdparty/g2o
+#   ${ORB_SLAM3_DIR}/Thirdparty/Sophus
+  # ${EIGEN3_INCLUDE_DIRS}
+#   ${Pangolin_INCLUDE_DIRS}
+  ${OpenCV_INCLUDE_DIRS}
+)
+
+
+install(TARGETS apriltag_node visualize_point_cloud capture_video #mono_node_cpp imu_mono_node_cpp #example_mono_node_cpp
+    DESTINATION lib/${PROJECT_NAME}
+)
+
+install (DIRECTORY include/ 
+        DESTINATION include
+)
+
+# install bag files
+install(
+  DIRECTORY bags/
+  DESTINATION share/${PROJECT_NAME}/bags
+)
+
+# install config files
+install(
+  DIRECTORY config/
+  DESTINATION share/${PROJECT_NAME}/config
+)
+
+# install video files
+install(
+  DIRECTORY videos/
+  DESTINATION share/${PROJECT_NAME}/videos
+)
+
+# # install EuRoC dataset
+# install(
+#   DIRECTORY TEST_DATASET/
+#   DESTINATION share/${PROJECT_NAME}/TEST_DATASET)
+
+# install launch files
+install(
+  DIRECTORY launch/
+  DESTINATION share/${PROJECT_NAME}/launch
+)
 
 if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)

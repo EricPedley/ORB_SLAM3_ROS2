@@ -1,0 +1,9 @@
+<launch>
+    <node pkg="ros2_orb_slam3" exec="example_mono_node_cpp">
+        <param name="node_name_arg" value="example_mono_slam_cpp"/>
+    </node>
+    <node pkg="ros2_orb_slam3" exec="mono_driver_node.py">
+        <param name="settings_name" value="EuRoC"/>
+        <param name="image_seq" value="sample_euroc_MH05"/>
+    </node>
+</launch>
