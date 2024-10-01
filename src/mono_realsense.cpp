@@ -101,7 +101,7 @@ class MonoRealSense : public rclcpp::Node
       }
 
       // setup orb slam object
-      pAgent = std::make_shared<ORB_SLAM3::System>(vocabulary_file_path, 
+      pAgent = std::make_shared<ORB_SLAM3::System>(vocabulary_file_path,
           settings_file_path,
           sensor_type,
           use_pangolin,

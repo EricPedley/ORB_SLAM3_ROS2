@@ -2,6 +2,8 @@
 #include <geometry_msgs/msg/vector3.hpp>
 // #include <rclcpp/executors/multi_threaded_executor.hpp>
 // #include <rclcpp/logging.hpp>
+#include <sensor_msgs/msg/detail/image__struct.hpp>
+#include <sensor_msgs/msg/detail/imu__struct.hpp>
 #include <sensor_msgs/msg/image.hpp>
 #include <sensor_msgs/msg/imu.hpp>
 #include <sensor_msgs/msg/point_cloud.hpp>
@@ -22,6 +24,7 @@
 #include "System.h"
 
 #include <rclcpp/rclcpp.hpp>
+#include <unistd.h>
 
 using namespace std::chrono_literals;
 using std::placeholders::_1;
@@ -31,8 +34,7 @@ public:
   ImuMonoRealSense()
       : Node("imu_mono_realsense"),
         vocabulary_file_path(std::string(PROJECT_PATH) +
-                             "/orb_slam3/Vocabulary/ORBvoc.txt"),
-        count(0), count2(0) {
+                             "/orb_slam3/Vocabulary/ORBvoc.txt") {
 
     // declare parameters
     declare_parameter("sensor_type", "imu-monocular");
@@ -114,6 +116,8 @@ public:
     // setup orb slam object
     pAgent = std::make_shared<ORB_SLAM3::System>(
         vocabulary_file_path, settings_file_path, sensor_type, use_pangolin, 0);
+    syncThread_ = new std::thread(&ImuMonoRealSense::sync_with_imu, this);
+
     image_scale = pAgent->GetImageScale();
 
     // create subscriptions
@@ -124,18 +128,15 @@ public:
     imu_sub = create_subscription<sensor_msgs::msg::Imu>(
         "camera/imu", 10, std::bind(&ImuMonoRealSense::imu_callback, this, _1),
         imu_options);
-
-    // create publishers
-
-    // create timer
-    image_timer = create_wall_timer(
-        1s / 30, std::bind(&ImuMonoRealSense::image_timer_callback, this),
-        image_timer_callback_group);
-    imu_timer = create_wall_timer(
-        1s / 200, std::bind(&ImuMonoRealSense::imu_timer_callback, this));
   }
 
   ~ImuMonoRealSense() {
+    syncThread_->join();
+    delete syncThread_;
+
+    pAgent->Shutdown();
+    pAgent->SaveKeyFrameTrajectoryTUM("KeyFrameTrajectory.txt");
+
     if (use_live_feed) {
       vector<ORB_SLAM3::MapPoint *> map_points = pAgent->GetTrackedMapPoints();
       save_map_to_csv(map_points);
@@ -176,169 +177,113 @@ private:
     }
   }
 
+  cv::Mat get_image(const sensor_msgs::msg::Image::SharedPtr msg) {
+    cv_bridge::CvImageConstPtr cv_ptr;
+
+    try {
+      cv_ptr = cv_bridge::toCvShare(msg, sensor_msgs::image_encodings::MONO8);
+    } catch (cv_bridge::Exception &e) {
+      RCLCPP_ERROR(this->get_logger(), "cv_bridge exception: %s", e.what());
+    }
+
+    if (cv_ptr->image.type() == 0) {
+      return cv_ptr->image.clone();
+    } else {
+      std::cerr << "Error image type" << std::endl;
+      return cv_ptr->image.clone();
+    }
+  }
+
+  void sync_with_imu() {
+    while (rclcpp::ok()) {
+      std::unique_lock<std::mutex> img_lock(bufMutexImg_, std::defer_lock);
+      std::unique_lock<std::mutex> imu_lock(bufMutex_, std::defer_lock);
+
+      std::lock(img_lock, imu_lock);
+
+      if (!imgBuf_.empty() && !imuBuf_.empty()) {
+        auto imgPtr = imgBuf_.front();
+        double tImage =
+            imgPtr->header.stamp.sec + imgPtr->header.stamp.nanosec * 1e-9;
+
+        cv::Mat imageFrame = get_image(imgPtr); // Process image before popping
+        vector<ORB_SLAM3::IMU::Point> vImuMeas;
+        std::stringstream imu_data_stream;
+
+        while (!imuBuf_.empty() &&
+               imgPtr->header.stamp.sec + imgPtr->header.stamp.nanosec * 1e-9 <=
+                   tImage) {
+          auto imuPtr = imuBuf_.front();
+          double tIMU =
+              imgPtr->header.stamp.sec + imgPtr->header.stamp.nanosec * 1e-9;
+          // double tIMUshort = fmod(tIMU, 100);
+
+          imuBuf_.pop();
+          cv::Point3f acc(imuPtr->linear_acceleration.x,
+                          imuPtr->linear_acceleration.y,
+                          imuPtr->linear_acceleration.z);
+          cv::Point3f gyr(imuPtr->angular_velocity.x,
+                          imuPtr->angular_velocity.y,
+                          imuPtr->angular_velocity.z);
+          vImuMeas.push_back(ORB_SLAM3::IMU::Point(acc, gyr, tIMU));
+
+          // Debug info
+          // imu_data_stream << "IMU at " << std::fixed << std::setprecision(6)
+          // << tIMUshort << " - Acc: [" << acc << "], Gyr: [" << gyr << "]\n";
+        }
+
+        imgBuf_.pop(); // Safely pop the image from the buffer here
+
+        if (vImuMeas.empty()) {
+          RCLCPP_WARN(
+              this->get_logger(),
+              "No valid IMU data available for the current frame at time %.6f.",
+              tImage);
+          continue; // Skip processing this frame
+        }
+
+        try {
+          pAgent->TrackMonocular(imageFrame, tImage, vImuMeas);
+          // RCLCPP_INFO(this->get_logger(), "Image at %.6f processed with IMU
+          // data: \n%s", tImageshort, imu_data_stream.str().c_str());
+        } catch (const std::exception &e) {
+          RCLCPP_ERROR(this->get_logger(), "SLAM processing exception: %s",
+                       e.what());
+        }
+      }
+    }
+  }
+
   void image_callback(const sensor_msgs::msg::Image::SharedPtr msg) {
-    auto cv_ptr =
-        cv_bridge::toCvShare(msg, sensor_msgs::image_encodings::MONO8);
-    timestamp = msg->header.stamp.sec + msg->header.stamp.nanosec * 1e-9;
+    bufMutexImg_.lock();
 
-    cv::Mat frame = cv_ptr->image;
-    // cv::imshow("image", frame);
-    // cv::waitKey(1);
+    if (!imgBuf_.empty())
+      imgBuf_.pop();
+    imgBuf_.push(msg);
 
-    if (image_scale != 1.f) {
-      cv::resize(frame, frame,
-                 cv::Size(frame.cols * image_scale, frame.rows * image_scale));
-    }
-
-    Sophus::SE3f Tcw = pAgent->TrackMonocular(frame, timestamp, vImuMeas);
-
-    // if (!Tcw.matrix().isIdentity() && count == 0)
-    // {
-    //   RCLCPP_INFO(get_logger(), "initial orientation set");
-    //   *initial_orientation = vImuMeas.back();
-    //   count++;
-    // }
-    count++;
+    bufMutexImg_.unlock();
   }
 
-  void imu_callback(const sensor_msgs::msg::Imu msg) {
-    if (count > 0) {
-      vImuMeas.clear();
-      count = 0;
-    }
+  void imu_callback(const sensor_msgs::msg::Imu &msg) {
 
-    ORB_SLAM3::IMU::Point imu_meas(
-        static_cast<float>(msg.linear_acceleration.x),
-        static_cast<float>(msg.linear_acceleration.y),
-        static_cast<float>(msg.linear_acceleration.z),
-        static_cast<float>(msg.angular_velocity.x),
-        static_cast<float>(msg.angular_velocity.y),
-        static_cast<float>(msg.angular_velocity.z),
-        msg.header.stamp.sec + msg.header.stamp.nanosec * 1e-9);
-    vImuMeas.push_back(imu_meas);
-    // RCLCPP_INFO_STREAM(get_logger(), "imu timestamp: " << std::fixed <<
-    // std::setprecision(9) << msg.header.stamp.sec + msg.header.stamp.nanosec *
-    // 1e-9);
-  }
-
-  void image_timer_callback() {
-    RCLCPP_INFO_STREAM(get_logger(), "image timer callback");
-    if (!use_live_feed) {
-      cv::Mat frame;
-      input_video >> frame;
-      auto ros_image =
-          cv_bridge::CvImage(std_msgs::msg::Header(), "mono8", frame)
-              .toImageMsg();
-
-      std::string timestamp_line;
-      std::getline(video_timestamp_file, timestamp_line);
-      std::istringstream ss(timestamp_line);
-      std::string token;
-      std::vector<float> timestamp_data;
-      while (std::getline(ss, token, ',')) {
-        timestamp_data.push_back(std::stof(token));
-      }
-
-      timestamp = timestamp_data[0] + timestamp_data[1] * 1e-9;
-      // RCLCPP_INFO_STREAM(get_logger(), "image timestamp: " << std::fixed <<
-      // std::setprecision(9) << timestamp);
-
-      if (!frame.empty()) {
-        if (image_scale != 1.f) {
-          cv::resize(
-              frame, frame,
-              cv::Size(frame.cols * image_scale, frame.rows * image_scale));
-        }
-
-        if (sensor_type_param == "monocular") {
-          Sophus::SE3f Tcw = pAgent->TrackMonocular(frame, timestamp);
-        } else if (sensor_type_param == "imu-monocular") {
-          Sophus::SE3f Tcw = pAgent->TrackMonocular(frame, timestamp, vImuMeas);
-        }
-        count++;
-
-        cv::imshow("frame", frame);
-        cv::waitKey(1);
-      } else {
-        RCLCPP_INFO_STREAM_ONCE(get_logger(), "End of video file");
-        vector<ORB_SLAM3::MapPoint *> map_points =
-            pAgent->GetTrackedMapPoints();
-        save_map_to_csv(map_points);
-        pAgent->Shutdown();
-        rclcpp::shutdown();
-      }
-    }
-  }
-
-  void imu_timer_callback() {
-    if (!use_live_feed && sensor_type_param == "imu-monocular") {
-      // if the a new frame has been processed, clear the imu data
-      if (count > 0) {
-        vImuMeas.clear();
-        count = 0;
-      }
-      std::string imu_line;
-      std::getline(imu_file, imu_line);
-      std::istringstream ss(imu_line);
-      std::string token;
-      std::vector<double> imu_data;
-      while (std::getline(ss, token, ',')) {
-        imu_data.push_back(std::stod(token));
-      }
-      ORB_SLAM3::IMU::Point imu_meas(imu_data[0], imu_data[1], imu_data[2],
-                                     imu_data[3], imu_data[4], imu_data[5],
-                                     imu_data[6]);
-      vImuMeas.push_back(imu_meas);
-
-      if (count2 >= 200 / 30) {
-        count2 = 0;
-        if (!use_live_feed) {
-          cv::Mat frame;
-          input_video >> frame;
-          auto ros_image =
-              cv_bridge::CvImage(std_msgs::msg::Header(), "mono8", frame)
-                  .toImageMsg();
-
-          std::string timestamp_line;
-          std::getline(video_timestamp_file, timestamp_line);
-          timestamp = std::stod(timestamp_line);
-
-          if (!frame.empty()) {
-            if (image_scale != 1.f) {
-              cv::resize(
-                  frame, frame,
-                  cv::Size(frame.cols * image_scale, frame.rows * image_scale));
-            }
-
-            if (sensor_type_param == "monocular") {
-              Sophus::SE3f Tcw = pAgent->TrackMonocular(frame, timestamp);
-            } else if (sensor_type_param == "imu-monocular") {
-              Sophus::SE3f Tcw =
-                  pAgent->TrackMonocular(frame, timestamp, vImuMeas);
-            }
-            count++;
-
-            cv::imshow("frame", frame);
-            cv::waitKey(1);
-          } else {
-            RCLCPP_INFO_STREAM_ONCE(get_logger(), "End of video file");
-            vector<ORB_SLAM3::MapPoint *> map_points =
-                pAgent->GetTrackedMapPoints();
-            save_map_to_csv(map_points);
-            pAgent->Shutdown();
-            rclcpp::shutdown();
-          }
-        }
-      }
-      count2++;
+    if (!std::isnan(msg.linear_acceleration.x) &&
+        !std::isnan(msg.linear_acceleration.y) &&
+        !std::isnan(msg.linear_acceleration.z) &&
+        !std::isnan(msg.angular_velocity.x) &&
+        !std::isnan(msg.angular_velocity.y) &&
+        !std::isnan(msg.angular_velocity.z)) {
+      bufMutex_.lock();
+      const sensor_msgs::msg::Imu::SharedPtr msg_ptr =
+          std::make_shared<sensor_msgs::msg::Imu>(msg);
+      imuBuf_.push(msg_ptr);
+      bufMutex_.unlock();
+    } else {
+      RCLCPP_ERROR(this->get_logger(), "Invalid IMU data - Rxd NaN");
     }
   }
 
   rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr image_sub;
   rclcpp::Subscription<sensor_msgs::msg::Imu>::SharedPtr imu_sub;
-  rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr image_pub;
-  rclcpp::TimerBase::SharedPtr image_timer;
-  rclcpp::TimerBase::SharedPtr imu_timer;
 
   sensor_msgs::msg::Imu imu_msg;
 
@@ -354,7 +299,6 @@ private:
   std::vector<double> vGyro_times;
   std::vector<geometry_msgs::msg::Vector3> vAccel;
   std::vector<double> vAccel_times;
-  std::vector<ORB_SLAM3::IMU::Point> vImuMeas;
 
   queue<sensor_msgs::msg::Imu::SharedPtr> imuBuf_;
   queue<sensor_msgs::msg::Image::SharedPtr> imgBuf_;
@@ -365,11 +309,8 @@ private:
   std::string vocabulary_file_path;
   std::string settings_file_path;
   float image_scale;
-  double timestamp;
 
   std::shared_ptr<ORB_SLAM3::IMU::Point> initial_orientation;
-  int count;
-  int count2;
 };
 
 int main(int argc, char *argv[]) {
