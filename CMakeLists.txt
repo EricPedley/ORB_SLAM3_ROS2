@@ -1,8 +1,8 @@
 cmake_minimum_required(VERSION 3.8)
 project(orb_slam3_ros2)
+
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 set(ENV{PYTHONPATH} "/opt/ros/humble/lib/python3.10/site-packages/")
-
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} ${CMAKE_CURRENT_SOURCE_DIR}/CMakeModules)
 
 if(NOT CMAKE_CXX_STANDARD)
@@ -133,7 +133,6 @@ include_directories(
     ${ORB_SLAM3_ROOT_DIR}/include
     ${ORB_SLAM3_ROOT_DIR}/include/CameraModels
     ${ORB_SLAM3_ROOT_DIR}/Thirdparty/Sophus
-    # ${ORB_SLAM3_ROOT_DIR}/Thirdparty/DBoW2/DBoW2
 )
 
 link_directories(
@@ -202,7 +201,7 @@ link_directories(
 # )
 
 target_link_libraries(apriltag_node PUBLIC apriltag::apriltag)
-target_link_libraries(imu_mono_node_cpp PUBLIC ${PROJECT_SOURCE_DIR}/ORB_SLAM3/Thirdparty/DBoW2/lib/libDBoW2.so)
+# target_link_libraries(imu_mono_node_cpp PUBLIC ${PROJECT_SOURCE_DIR}/ORB_SLAM3/Thirdparty/DBoW2/lib/libDBoW2.so)
 # target_link_libraries(mono_node_cpp PUBLIC ORB_SLAM3)
 # target_link_libraries(example_mono_node_cpp PUBLIC ORB_SLAM3)
 

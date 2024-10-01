@@ -17,6 +17,8 @@
 #include <cv_bridge/cv_bridge.h>
 #include <memory>
 
+#include "System.h"
+
 #include "rclcpp/rclcpp.hpp"
 using std::placeholders::_1;
 

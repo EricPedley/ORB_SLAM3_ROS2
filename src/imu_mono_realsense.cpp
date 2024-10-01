@@ -1,30 +1,23 @@
 #include <geometry_msgs/msg/quaternion.hpp>
 #include <geometry_msgs/msg/vector3.hpp>
-#include <rclcpp/executors/multi_threaded_executor.hpp>
-#include <rclcpp/logging.hpp>
+// #include <rclcpp/executors/multi_threaded_executor.hpp>
+// #include <rclcpp/logging.hpp>
 #include <sensor_msgs/msg/image.hpp>
 #include <sensor_msgs/msg/imu.hpp>
 #include <sensor_msgs/msg/point_cloud.hpp>
 
-#include <algorithm>
 #include <chrono>
-#include <csignal>
-#include <ctime>
 #include <fstream>
-#include <iostream>
-#include <signal.h>
 #include <sstream>
-#include <stdlib.h>
 
-#include <Eigen/Dense>
 #include <cv_bridge/cv_bridge.h>
 
-#include <opencv2/core.hpp>
-#include <opencv2/core/eigen.hpp>
-#include <opencv2/highgui.hpp>
-#include <opencv2/imgproc.hpp>
+// #include <opencv2/core.hpp>
+// #include <opencv2/core/eigen.hpp>
+// #include <opencv2/highgui.hpp>
+// #include <opencv2/imgproc.hpp>
 #include <opencv2/opencv.hpp>
-
+//
 // this is orb_slam3
 #include "System.h"
 
@@ -362,6 +355,11 @@ private:
   std::vector<geometry_msgs::msg::Vector3> vAccel;
   std::vector<double> vAccel_times;
   std::vector<ORB_SLAM3::IMU::Point> vImuMeas;
+
+  queue<sensor_msgs::msg::Imu::SharedPtr> imuBuf_;
+  queue<sensor_msgs::msg::Image::SharedPtr> imgBuf_;
+  std::mutex bufMutex_, bufMutexImg_;
+  std::thread *syncThread_;
 
   std::shared_ptr<ORB_SLAM3::System> pAgent;
   std::string vocabulary_file_path;
