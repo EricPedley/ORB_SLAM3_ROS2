@@ -1,15 +1,18 @@
 cmake_minimum_required(VERSION 3.8)
 project(orb_slam3_ros2)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+set(ENV{PYTHONPATH} "/opt/ros/humble/lib/python3.10/site-packages/")
+
+set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} ${CMAKE_CURRENT_SOURCE_DIR}/CMakeModules)
+
+if(NOT CMAKE_CXX_STANDARD)
+    set(CMAKE_CXX_STANDARD 14)
+endif()
 
 if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   add_compile_options(-Wall -Wextra -Wpedantic)
 endif()
-# set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -w")
-# set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -w")
 
-# list(APPEND CMAKE_PREFIX_PATH "home/graham/prefix/eigen3.3")
-# set(Eigen3_DIR "~/prefix/eigen3.3/share/eigen3.3/cmake")
 set(ENV{PROJECT_PATH} "${project_path}")
 add_definitions(-DPROJECT_PATH="${project_path}")
 
@@ -28,10 +31,13 @@ find_package(apriltag_msgs REQUIRED)
 find_package(cv_bridge REQUIRED)
 find_package(OpenCV 4.4 REQUIRED)
 # find_package(Eigen3 3.3 REQUIRED) # Matched with Sophus
+find_package(Sophus REQUIRED)
 find_package(Pangolin REQUIRED)
 find_package(image_transport REQUIRED)
 find_package(pcl_ros REQUIRED)
 find_package(pcl_conversions REQUIRED)
+
+find_package(ORB_SLAM3 REQUIRED)
 
 if(NOT OpenCV_FOUND)
   message(FATAL_ERROR "OpenCV not found")
@@ -55,6 +61,7 @@ set(THIS_PACKAGE_INCLUDE_DEPENDS
   image_transport
   pcl_ros
   pcl_conversions
+  ORB_SLAM3
 )
 
 # if(Eigen3_FOUND)
@@ -79,9 +86,9 @@ endif()
 #   src/mono_realsense.cpp
 # )
 #
-# add_executable(imu_mono_node_cpp
-#   src/imu_mono_realsense.cpp
-# )
+add_executable(imu_mono_node_cpp
+  src/imu_mono_realsense.cpp
+)
 
 add_executable(capture_video
     src/capture_realsense_video.cpp
@@ -103,9 +110,9 @@ add_executable(apriltag_node
 #   PUBLIC ${THIS_PACKAGE_INCLUDE_DEPENDS}
 # )
 
-# ament_target_dependencies(imu_mono_node_cpp
-#   PUBLIC ${THIS_PACKAGE_INCLUDE_DEPENDS}
-# )
+ament_target_dependencies(imu_mono_node_cpp
+  PUBLIC ${THIS_PACKAGE_INCLUDE_DEPENDS}
+)
 
 ament_target_dependencies(capture_video
   PUBLIC ${THIS_PACKAGE_INCLUDE_DEPENDS}
@@ -119,30 +126,91 @@ ament_target_dependencies(apriltag_node
   PUBLIC ${THIS_PACKAGE_INCLUDE_DEPENDS}
 )
 
-# set(ORB_SLAM3_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../../../other_repos/ORB_SLAM3)
-# add_subdirectory(${ORB_SLAM3_DIR} ORB_SLAM3)
+set(ORB_SLAM3_ROOT_DIR ${CMAKE_CURRENT_SOURCE_DIR}/ORB_SLAM3)
+
+include_directories(
+    include
+    ${ORB_SLAM3_ROOT_DIR}/include
+    ${ORB_SLAM3_ROOT_DIR}/include/CameraModels
+    ${ORB_SLAM3_ROOT_DIR}/Thirdparty/Sophus
+    # ${ORB_SLAM3_ROOT_DIR}/Thirdparty/DBoW2/DBoW2
+)
+
+link_directories(
+    include
+)
+
+# add_library(${PROJECT_NAME} SHARED
+#   ${ORB_SLAM3_DIR}/src/System.cc
+#   ${ORB_SLAM3_DIR}/src/Tracking.cc
+#   ${ORB_SLAM3_DIR}/src/LocalMapping.cc
+#   ${ORB_SLAM3_DIR}/src/LoopClosing.cc
+#   ${ORB_SLAM3_DIR}/src/ORBextractor.cc
+#   ${ORB_SLAM3_DIR}/src/ORBmatcher.cc
+#   ${ORB_SLAM3_DIR}/src/FrameDrawer.cc
+#   ${ORB_SLAM3_DIR}/src/Converter.cc
+#   ${ORB_SLAM3_DIR}/src/MapPoint.cc
+#   ${ORB_SLAM3_DIR}/src/KeyFrame.cc
+#   ${ORB_SLAM3_DIR}/src/Atlas.cc
+#   ${ORB_SLAM3_DIR}/src/Map.cc
+#   ${ORB_SLAM3_DIR}/src/MapDrawer.cc
+#   ${ORB_SLAM3_DIR}/src/Optimizer.cc
+#   ${ORB_SLAM3_DIR}/src/Frame.cc
+#   ${ORB_SLAM3_DIR}/src/KeyFrameDatabase.cc
+#   ${ORB_SLAM3_DIR}/src/Sim3Solver.cc
+#   ${ORB_SLAM3_DIR}/src/Viewer.cc
+#   ${ORB_SLAM3_DIR}/src/ImuTypes.cc
+#   ${ORB_SLAM3_DIR}/src/G2oTypes.cc
+#   ${ORB_SLAM3_DIR}/src/CameraModels/Pinhole.cpp
+#   ${ORB_SLAM3_DIR}/src/CameraModels/KannalaBrandt8.cpp
+#   ${ORB_SLAM3_DIR}/src/OptimizableTypes.cpp
+#   ${ORB_SLAM3_DIR}/src/MLPnPsolver.cpp
+#   ${ORB_SLAM3_DIR}/src/GeometricTools.cc
+#   ${ORB_SLAM3_DIR}/src/TwoViewReconstruction.cc
+#   ${ORB_SLAM3_DIR}/src/Config.cc
+#   ${ORB_SLAM3_DIR}/src/Settings.cc
+#   ${ORB_SLAM3_DIR}/include/System.h
+#   ${ORB_SLAM3_DIR}/include/Tracking.h
+#   ${ORB_SLAM3_DIR}/include/LocalMapping.h
+#   ${ORB_SLAM3_DIR}/include/LoopClosing.h
+#   ${ORB_SLAM3_DIR}/include/ORBextractor.h
+#   ${ORB_SLAM3_DIR}/include/ORBmatcher.h
+#   ${ORB_SLAM3_DIR}/include/FrameDrawer.h
+#   ${ORB_SLAM3_DIR}/include/Converter.h
+#   ${ORB_SLAM3_DIR}/include/MapPoint.h
+#   ${ORB_SLAM3_DIR}/include/KeyFrame.h
+#   ${ORB_SLAM3_DIR}/include/Atlas.h
+#   ${ORB_SLAM3_DIR}/include/Map.h
+#   ${ORB_SLAM3_DIR}/include/MapDrawer.h
+#   ${ORB_SLAM3_DIR}/include/Optimizer.h
+#   ${ORB_SLAM3_DIR}/include/Frame.h
+#   ${ORB_SLAM3_DIR}/include/KeyFrameDatabase.h
+#   ${ORB_SLAM3_DIR}/include/Sim3Solver.h
+#   ${ORB_SLAM3_DIR}/include/Viewer.h
+#   ${ORB_SLAM3_DIR}/include/ImuTypes.h
+#   ${ORB_SLAM3_DIR}/include/G2oTypes.h
+#   ${ORB_SLAM3_DIR}/include/CameraModels/GeometricCamera.h
+#   ${ORB_SLAM3_DIR}/include/CameraModels/Pinhole.h
+#   ${ORB_SLAM3_DIR}/include/CameraModels/KannalaBrandt8.h
+#   ${ORB_SLAM3_DIR}/include/OptimizableTypes.h
+#   ${ORB_SLAM3_DIR}/include/MLPnPsolver.h
+#   ${ORB_SLAM3_DIR}/include/GeometricTools.h
+#   ${ORB_SLAM3_DIR}/include/TwoViewReconstruction.h
+#   ${ORB_SLAM3_DIR}/include/SerializationUtils.h
+#   ${ORB_SLAM3_DIR}/include/Config.h
+#   ${ORB_SLAM3_DIR}/include/Settings.h
+# )
 
 target_link_libraries(apriltag_node PUBLIC apriltag::apriltag)
-# target_link_libraries(imu_mono_node_cpp PUBLIC ORB_SLAM3)
+target_link_libraries(imu_mono_node_cpp PUBLIC ${PROJECT_SOURCE_DIR}/ORB_SLAM3/Thirdparty/DBoW2/lib/libDBoW2.so)
 # target_link_libraries(mono_node_cpp PUBLIC ORB_SLAM3)
 # target_link_libraries(example_mono_node_cpp PUBLIC ORB_SLAM3)
 
-include_directories(
-#   ${ORB_SLAM3_DIR}/include
-#   ${ORB_SLAM3_DIR}/Thirdparty/DBoW2
-#   ${ORB_SLAM3_DIR}/Thirdparty/g2o
-#   ${ORB_SLAM3_DIR}/Thirdparty/Sophus
-  # ${EIGEN3_INCLUDE_DIRS}
-#   ${Pangolin_INCLUDE_DIRS}
-  ${OpenCV_INCLUDE_DIRS}
-)
-
-
-install(TARGETS apriltag_node visualize_point_cloud capture_video #mono_node_cpp imu_mono_node_cpp #example_mono_node_cpp
+install(TARGETS apriltag_node visualize_point_cloud capture_video imu_mono_node_cpp # mono_node_cpp example_mono_node_cpp
     DESTINATION lib/${PROJECT_NAME}
 )
 
-install (DIRECTORY include/ 
+install (DIRECTORY include/
         DESTINATION include
 )
 
