@@ -24,7 +24,6 @@
 #include "System.h"
 
 #include <rclcpp/rclcpp.hpp>
-#include <unistd.h>
 
 using namespace std::chrono_literals;
 using std::placeholders::_1;
@@ -34,7 +33,7 @@ public:
   ImuMonoRealSense()
       : Node("imu_mono_realsense"),
         vocabulary_file_path(std::string(PROJECT_PATH) +
-                             "/orb_slam3/Vocabulary/ORBvoc.txt") {
+                             "/ORB_SLAM3/Vocabulary/ORBvoc.txt") {
 
     // declare parameters
     declare_parameter("sensor_type", "imu-monocular");
@@ -73,11 +72,13 @@ public:
       sensor_type = ORB_SLAM3::System::IMU_MONOCULAR;
       settings_file_path =
           std::string(PROJECT_PATH) +
-          "/orb_slam3/config/Monocular-Inertial/RealSense_D435i.yaml";
+          "/config/Monocular-Inertial/RealSense_D435i.yaml";
     } else {
       RCLCPP_ERROR(get_logger(), "Sensor type not recognized");
       rclcpp::shutdown();
     }
+
+    RCLCPP_INFO_STREAM(get_logger(), "vocabulary_file_path: " << vocabulary_file_path);
 
     // open the video and imu files
     std::string imu_file_name = std::string(PROJECT_PATH) + "/videos/" +

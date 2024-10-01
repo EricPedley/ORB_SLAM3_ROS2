@@ -5,6 +5,10 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 set(ENV{PYTHONPATH} "/opt/ros/humble/lib/python3.10/site-packages/")
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} ${CMAKE_CURRENT_SOURCE_DIR}/CMakeModules)
 
+if(NOT CMAKE_BUILD_TYPE)        # If no build type is set, set one
+    set(CMAKE_BUILD_TYPE "Debug" CACHE STRING "Type of build." FORCE)
+endif()
+
 if(NOT CMAKE_CXX_STANDARD)
     set(CMAKE_CXX_STANDARD 14)
 endif()
@@ -13,8 +17,8 @@ if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   add_compile_options(-Wall -Wextra -Wpedantic)
 endif()
 
-set(ENV{PROJECT_PATH} "${project_path}")
-add_definitions(-DPROJECT_PATH="${project_path}")
+set(ENV{PROJECT_PATH} "${PROJECT_SOURCE_DIR}")
+add_definitions(-DPROJECT_PATH="${PROJECT_SOURCE_DIR}")
 
 # find dependencies
 find_package(ament_cmake REQUIRED)
@@ -39,6 +43,12 @@ find_package(pcl_conversions REQUIRED)
 
 find_package(ORB_SLAM3 REQUIRED)
 
+if(ORB_SLAM3_LIBRARY)
+    message("Found ORB_SLAM3: ${ORB_SLAM3_LIBRARY}")
+else()
+    message("Could not find ORB_SLAM3 library")
+endif()
+
 if(NOT OpenCV_FOUND)
   message(FATAL_ERROR "OpenCV not found")
 endif()
@@ -56,7 +66,6 @@ set(THIS_PACKAGE_INCLUDE_DEPENDS
   apriltag_msgs
   cv_bridge
   OpenCV
-  # Eigen3
   Pangolin
   image_transport
   pcl_ros
@@ -70,10 +79,6 @@ set(THIS_PACKAGE_INCLUDE_DEPENDS
 # else()
 #     message(FATAL_ERROR "Could not find Eigen3")
 # endif()
-
-if(NOT CMAKE_BUILD_TYPE)        # If no build type is set, set one
-  set(CMAKE_BUILD_TYPE "Debug" CACHE STRING "Type of build." FORCE)
-endif()
 
 
 # # Add executable
@@ -139,69 +144,12 @@ link_directories(
     include
 )
 
-# add_library(${PROJECT_NAME} SHARED
-#   ${ORB_SLAM3_DIR}/src/System.cc
-#   ${ORB_SLAM3_DIR}/src/Tracking.cc
-#   ${ORB_SLAM3_DIR}/src/LocalMapping.cc
-#   ${ORB_SLAM3_DIR}/src/LoopClosing.cc
-#   ${ORB_SLAM3_DIR}/src/ORBextractor.cc
-#   ${ORB_SLAM3_DIR}/src/ORBmatcher.cc
-#   ${ORB_SLAM3_DIR}/src/FrameDrawer.cc
-#   ${ORB_SLAM3_DIR}/src/Converter.cc
-#   ${ORB_SLAM3_DIR}/src/MapPoint.cc
-#   ${ORB_SLAM3_DIR}/src/KeyFrame.cc
-#   ${ORB_SLAM3_DIR}/src/Atlas.cc
-#   ${ORB_SLAM3_DIR}/src/Map.cc
-#   ${ORB_SLAM3_DIR}/src/MapDrawer.cc
-#   ${ORB_SLAM3_DIR}/src/Optimizer.cc
-#   ${ORB_SLAM3_DIR}/src/Frame.cc
-#   ${ORB_SLAM3_DIR}/src/KeyFrameDatabase.cc
-#   ${ORB_SLAM3_DIR}/src/Sim3Solver.cc
-#   ${ORB_SLAM3_DIR}/src/Viewer.cc
-#   ${ORB_SLAM3_DIR}/src/ImuTypes.cc
-#   ${ORB_SLAM3_DIR}/src/G2oTypes.cc
-#   ${ORB_SLAM3_DIR}/src/CameraModels/Pinhole.cpp
-#   ${ORB_SLAM3_DIR}/src/CameraModels/KannalaBrandt8.cpp
-#   ${ORB_SLAM3_DIR}/src/OptimizableTypes.cpp
-#   ${ORB_SLAM3_DIR}/src/MLPnPsolver.cpp
-#   ${ORB_SLAM3_DIR}/src/GeometricTools.cc
-#   ${ORB_SLAM3_DIR}/src/TwoViewReconstruction.cc
-#   ${ORB_SLAM3_DIR}/src/Config.cc
-#   ${ORB_SLAM3_DIR}/src/Settings.cc
-#   ${ORB_SLAM3_DIR}/include/System.h
-#   ${ORB_SLAM3_DIR}/include/Tracking.h
-#   ${ORB_SLAM3_DIR}/include/LocalMapping.h
-#   ${ORB_SLAM3_DIR}/include/LoopClosing.h
-#   ${ORB_SLAM3_DIR}/include/ORBextractor.h
-#   ${ORB_SLAM3_DIR}/include/ORBmatcher.h
-#   ${ORB_SLAM3_DIR}/include/FrameDrawer.h
-#   ${ORB_SLAM3_DIR}/include/Converter.h
-#   ${ORB_SLAM3_DIR}/include/MapPoint.h
-#   ${ORB_SLAM3_DIR}/include/KeyFrame.h
-#   ${ORB_SLAM3_DIR}/include/Atlas.h
-#   ${ORB_SLAM3_DIR}/include/Map.h
-#   ${ORB_SLAM3_DIR}/include/MapDrawer.h
-#   ${ORB_SLAM3_DIR}/include/Optimizer.h
-#   ${ORB_SLAM3_DIR}/include/Frame.h
-#   ${ORB_SLAM3_DIR}/include/KeyFrameDatabase.h
-#   ${ORB_SLAM3_DIR}/include/Sim3Solver.h
-#   ${ORB_SLAM3_DIR}/include/Viewer.h
-#   ${ORB_SLAM3_DIR}/include/ImuTypes.h
-#   ${ORB_SLAM3_DIR}/include/G2oTypes.h
-#   ${ORB_SLAM3_DIR}/include/CameraModels/GeometricCamera.h
-#   ${ORB_SLAM3_DIR}/include/CameraModels/Pinhole.h
-#   ${ORB_SLAM3_DIR}/include/CameraModels/KannalaBrandt8.h
-#   ${ORB_SLAM3_DIR}/include/OptimizableTypes.h
-#   ${ORB_SLAM3_DIR}/include/MLPnPsolver.h
-#   ${ORB_SLAM3_DIR}/include/GeometricTools.h
-#   ${ORB_SLAM3_DIR}/include/TwoViewReconstruction.h
-#   ${ORB_SLAM3_DIR}/include/SerializationUtils.h
-#   ${ORB_SLAM3_DIR}/include/Config.h
-#   ${ORB_SLAM3_DIR}/include/Settings.h
-# )
+target_include_directories(imu_mono_node_cpp PUBLIC
+    ${ORB_SLAM3_INCLUDE_DIR}
+)
 
 target_link_libraries(apriltag_node PUBLIC apriltag::apriltag)
-# target_link_libraries(imu_mono_node_cpp PUBLIC ${PROJECT_SOURCE_DIR}/ORB_SLAM3/Thirdparty/DBoW2/lib/libDBoW2.so)
+target_link_libraries(imu_mono_node_cpp PUBLIC ${ORB_SLAM3_LIBRARY})
 # target_link_libraries(mono_node_cpp PUBLIC ORB_SLAM3)
 # target_link_libraries(example_mono_node_cpp PUBLIC ORB_SLAM3)
 
@@ -211,6 +159,22 @@ install(TARGETS apriltag_node visualize_point_cloud capture_video imu_mono_node_
 
 install (DIRECTORY include/
         DESTINATION include
+)
+
+install(DIRECTORY ${ORB_SLAM3_INCLUDE_DIR}
+        DESTINATION include
+)
+
+install(FILES ${ORB_SLAM3_LIBRARY}
+        DESTINATION lib
+)
+
+install(FILES ${CMAKE_CURRENT_SOURCE_DIR}/ORB_SLAM3/Thirdparty/g2o/lib/libg2o.so
+        DESTINATION lib
+)
+
+install(FILES ${CMAKE_CURRENT_SOURCE_DIR}/ORB_SLAM3/Thirdparty/DBoW2/lib/libDBoW2.so
+        DESTINATION lib
 )
 
 # install bag files
