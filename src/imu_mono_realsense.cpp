@@ -52,10 +52,6 @@ public:
         create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
     auto imu_callback_group =
         create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
-    auto image_timer_callback_group =
-        create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
-    auto imu_timer_callback_group =
-        create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
 
     rclcpp::SubscriptionOptions image_options;
     image_options.callback_group = image_callback_group;
@@ -70,15 +66,15 @@ public:
                            "/orb_slam3/config/Monocular/RealSense_D435i.yaml";
     } else if (sensor_type_param == "imu-monocular") {
       sensor_type = ORB_SLAM3::System::IMU_MONOCULAR;
-      settings_file_path =
-          std::string(PROJECT_PATH) +
-          "/config/Monocular-Inertial/RealSense_D435i.yaml";
+      settings_file_path = std::string(PROJECT_PATH) +
+                           "/config/Monocular-Inertial/RealSense_D435i.yaml";
     } else {
       RCLCPP_ERROR(get_logger(), "Sensor type not recognized");
       rclcpp::shutdown();
     }
 
-    RCLCPP_INFO_STREAM(get_logger(), "vocabulary_file_path: " << vocabulary_file_path);
+    RCLCPP_INFO_STREAM(get_logger(),
+                       "vocabulary_file_path: " << vocabulary_file_path);
 
     // open the video and imu files
     std::string imu_file_name = std::string(PROJECT_PATH) + "/videos/" +
