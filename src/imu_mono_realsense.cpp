@@ -1,10 +1,5 @@
 #include <geometry_msgs/msg/quaternion.hpp>
 #include <geometry_msgs/msg/vector3.hpp>
-// #include <rclcpp/executors/multi_threaded_executor.hpp>
-// #include <rclcpp/logging.hpp>
-#include <rmw/types.h>
-#include <sensor_msgs/msg/detail/image__struct.hpp>
-#include <sensor_msgs/msg/detail/imu__struct.hpp>
 #include <sensor_msgs/msg/image.hpp>
 #include <sensor_msgs/msg/imu.hpp>
 #include <sensor_msgs/msg/point_cloud.hpp>
@@ -15,10 +10,6 @@
 
 #include <cv_bridge/cv_bridge.h>
 
-// #include <opencv2/core.hpp>
-// #include <opencv2/core/eigen.hpp>
-// #include <opencv2/highgui.hpp>
-// #include <opencv2/imgproc.hpp>
 #include <opencv2/opencv.hpp>
 //
 // this is orb_slam3
@@ -322,7 +313,7 @@ private:
 
     // std::unique_lock<std::mutex> img_lock(bufMutexImg_, std::defer_lock);
     // std::unique_lock<std::mutex> imu_lock(bufMutex_, std::defer_lock);
-    //
+
     // std::lock(img_lock, imu_lock);
 
     bufMutexImg_.lock();
