@@ -3,6 +3,7 @@
 #include <sensor_msgs/msg/image.hpp>
 #include <sensor_msgs/msg/imu.hpp>
 #include <sensor_msgs/msg/point_cloud.hpp>
+#include <std_srvs/srv/empty.hpp>
 
 #include <chrono>
 #include <fstream>
@@ -18,7 +19,7 @@
 #include <rclcpp/rclcpp.hpp>
 
 using namespace std::chrono_literals;
-using std::placeholders::_1;
+using std::placeholders::_1, std::placeholders::_2;
 
 class ImuMonoRealSense : public rclcpp::Node
 {
@@ -141,13 +142,15 @@ public:
     imu_sub = create_subscription<sensor_msgs::msg::Imu>(
       "camera/camera/imu", imu_qos,
       std::bind(&ImuMonoRealSense::imu_callback, this, _1), imu_options);
+
+    // create services
+    slam_service = create_service<std_srvs::srv::Empty>(
+      "slam_service",
+      std::bind(&ImuMonoRealSense::slam_service_callback, this, _1, _2));
   }
 
   ~ImuMonoRealSense()
   {
-    // syncThread_->join();
-    // delete syncThread_;
-
     pAgent->Shutdown();
     pAgent->SaveKeyFrameTrajectoryTUM("KeyFrameTrajectory.txt");
 
@@ -222,84 +225,12 @@ private:
     }
   }
 
-  // void sync_with_imu()
-  // {
-  //   while (rclcpp::ok())
-  //   {
-  //     std::unique_lock<std::mutex> img_lock(bufMutexImg_, std::defer_lock);
-  //     std::unique_lock<std::mutex> imu_lock(bufMutex_, std::defer_lock);
-  //
-  //     std::lock(img_lock, imu_lock);
-  //
-  //     if (!imgBuf_.empty() && !imuBuf_.empty())
-  //     {
-  //       auto imgPtr = imgBuf_.front();
-  //       double tImage =
-  //           imgPtr->header.stamp.sec + imgPtr->header.stamp.nanosec * 1e-9;
-  //
-  //       cv::Mat imageFrame = get_image(imgPtr); // Process image before
-  //       popping vector<ORB_SLAM3::IMU::Point> vImuMeas; std::stringstream
-  //       imu_data_stream;
-  //
-  //       while (!imuBuf_.empty() &&
-  //              imgPtr->header.stamp.sec + imgPtr->header.stamp.nanosec *
-  //              1e-9
-  //              <=
-  //                  tImage)
-  //       {
-  //         auto imuPtr = imuBuf_.front();
-  //         double tIMU =
-  //             imgPtr->header.stamp.sec + imgPtr->header.stamp.nanosec *
-  //             1e-9;
-  //         // double tIMUshort = fmod(tIMU, 100);
-  //
-  //         imuBuf_.pop();
-  //         cv::Point3f acc(imuPtr->linear_acceleration.x,
-  //                         imuPtr->linear_acceleration.y,
-  //                         imuPtr->linear_acceleration.z);
-  //         cv::Point3f gyr(imuPtr->angular_velocity.x,
-  //                         imuPtr->angular_velocity.y,
-  //                         imuPtr->angular_velocity.z);
-  //         vImuMeas.push_back(ORB_SLAM3::IMU::Point(acc, gyr, tIMU));
-  //
-  //         // Debug info
-  //         // imu_data_stream << "IMU at " << std::fixed <<
-  //         std::setprecision(6)
-  //         // << tIMUshort << " - Acc: [" << acc << "], Gyr: [" << gyr <<
-  //         "]\n";
-  //       }
-  //
-  //       imgBuf_.pop(); // Safely pop the image from the buffer here
-  //
-  //       if (vImuMeas.empty())
-  //       {
-  //         RCLCPP_WARN(
-  //             this->get_logger(),
-  //             "No valid IMU data available for the current frame at time
-  //             %.6f.", tImage);
-  //         continue; // Skip processing this frame
-  //       }
-  //
-  //       // cv::imshow("test", imageFrame);
-  //       // cv::waitKey(1);
-  //       try
-  //       {
-  //         pAgent->TrackMonocular(imageFrame, tImage, vImuMeas);
-  //         // RCLCPP_INFO_STREAM(get_logger(), "Image at "
-  //         //                                      << tImage
-  //         //                                      << " processed with IMU "
-  //         //                                         "data: \n"
-  //         //                                      <<
-  //         imu_data_stream.str());
-  //       }
-  //       catch (const std::exception &e)
-  //       {
-  //         RCLCPP_ERROR(this->get_logger(), "SLAM processing exception: %s",
-  //                      e.what());
-  //       }
-  //     }
-  //   }
-  // }
+  void slam_service_callback(const std_srvs::srv::Empty::Request::SharedPtr,
+                             const std_srvs::srv::Empty::Response::SharedPtr)
+  {
+    // RCLCPP_INFO(get_logger(), "SLAM service called");
+    // pAgent->SaveTrajectoryTUM("CameraTrajectory.txt");
+  }
 
   void image_callback(const sensor_msgs::msg::Image::SharedPtr msg)
   {
@@ -411,6 +342,7 @@ private:
 
   rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr image_sub;
   rclcpp::Subscription<sensor_msgs::msg::Imu>::SharedPtr imu_sub;
+  rclcpp::Service<std_srvs::srv::Empty>::SharedPtr slam_service;
 
   sensor_msgs::msg::Imu imu_msg;
 
