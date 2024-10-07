@@ -2,7 +2,7 @@
     <arg name="sensor_type" default="imu-monocular"/>
     <arg name="use_pangolin" default="true"/>
     <arg name="use_live_feed" default="true"/>
-    <arg name="file_name" default="default.mp4"/>
+    <arg name="video_name" default="default.mp4"/>
     <arg name="bag_name" default="nothing"/>
     <include file="$(find-pkg-share realsense2_camera)/launch/rs_launch.py" if="$(eval '\'$(var use_live_feed)\' == \'true\'')">
         <arg name="enable_accel" value="true"/>

@@ -34,7 +34,7 @@ public:
     declare_parameter("sensor_type", "imu-monocular");
     declare_parameter("use_pangolin", true);
     declare_parameter("use_live_feed", false);
-    declare_parameter("video_name", "output.mp4");
+    declare_parameter("video_name", "ChangeMe.mp4");
 
     // get parameters
     sensor_type_param = get_parameter("sensor_type").as_string();
@@ -76,7 +76,7 @@ public:
     RCLCPP_INFO_STREAM(get_logger(),
                        "vocabulary_file_path: " << vocabulary_file_path);
 
-    // open the video and imu files
+    // open the video and imu files, if required
     std::string imu_file_name = std::string(PROJECT_PATH) + "/videos/" +
                                 video_name.substr(0, video_name.length() - 4) +
                                 ".csv";
@@ -118,6 +118,15 @@ public:
     {
       RCLCPP_INFO(get_logger(), "Opened imu file for reading");
     }
+
+    // video writer stuff
+    if (use_live_feed) {
+      video_name = generate_timestamp_string();
+    }
+    output_video.open(
+      video_name, cv::VideoWriter::fourcc('a', 'v', 'c', '1'), 30,
+      cv::Size(1280, 720),
+      false); // codec: avc1, frameRate: 30, resolution 1280x720, isColor: false
 
     // setup orb slam object
     pAgent = std::make_shared<ORB_SLAM3::System>(
@@ -163,6 +172,18 @@ public:
   }
 
 private:
+  std::string generate_timestamp_string()
+  {
+    std::time_t now = std::time(nullptr);
+    std::tm* ptm = std::localtime(&now);
+
+    std::ostringstream oss;
+
+    oss << std::put_time(ptm, "%Y-%m-%d_%H-%M-%S") << ".mp4";
+
+    return oss.str();
+  }
+
   void save_map_to_csv(vector<ORB_SLAM3::MapPoint *> map_points)
   {
     std::ofstream map_file;
@@ -228,49 +249,33 @@ private:
   void slam_service_callback(const std_srvs::srv::Empty::Request::SharedPtr,
                              const std_srvs::srv::Empty::Response::SharedPtr)
   {
-    // RCLCPP_INFO(get_logger(), "SLAM service called");
-    // pAgent->SaveTrajectoryTUM("CameraTrajectory.txt");
-  }
-
-  void image_callback(const sensor_msgs::msg::Image::SharedPtr msg)
-  {
-    // bufMutexImg_.lock();
-
-    if (!imgBuf_.empty())
-      imgBuf_.pop();
-    imgBuf_.push(msg);
-
-    // bufMutexImg_.unlock();
-
-    // std::unique_lock<std::mutex> img_lock(bufMutexImg_, std::defer_lock);
-    // std::unique_lock<std::mutex> imu_lock(bufMutex_, std::defer_lock);
-
-    // std::lock(img_lock, imu_lock);
-
-    bufMutexImg_.lock();
-    if (!imgBuf_.empty() && !imuBuf_.empty())
+    if (imgBuf_.size() != imuBuf_.size())
+    {
+      RCLCPP_ERROR_STREAM(
+        this->get_logger(),
+        "IMU and Image buffers are not of the same size. Imu buf size: "
+          << imuBuf_.size() << ", Image buf size: " << imgBuf_.size());
+      return;
+    }
+    while (!imgBuf_.empty())
     {
       auto imgPtr = imgBuf_.front();
-      imgBuf_.pop(); // Safely pop the image from the buffer here
-      bufMutexImg_.unlock();
+      imgBuf_.pop();
       double tImage =
         imgPtr->header.stamp.sec + imgPtr->header.stamp.nanosec * 1e-9;
 
       cv::Mat imageFrame = get_image(imgPtr); // Process image before popping
-      vector<ORB_SLAM3::IMU::Point> vImuMeas;
       std::stringstream imu_data_stream;
 
-      bufMutex_.lock();
-      while (!imuBuf_.empty() &&
-             imgPtr->header.stamp.sec + imgPtr->header.stamp.nanosec * 1e-9 <=
-               tImage)
+      vector<ORB_SLAM3::IMU::Point> vImuMeas;
+      auto current_imu_buf = imuBuf_.front();
+
+      while (!current_imu_buf.empty())
       {
-        auto imuPtr = imuBuf_.front();
-        imuBuf_.pop();
-        bufMutex_.unlock();
+        auto imuPtr = current_imu_buf.front();
+        current_imu_buf.pop();
         double tIMU =
-          imgPtr->header.stamp.sec + imgPtr->header.stamp.nanosec * 1e-9;
-        // double tIMUshort = fmod(tIMU, 100);
+          imuPtr->header.stamp.sec + imuPtr->header.stamp.nanosec * 1e-9;
 
         cv::Point3f acc(imuPtr->linear_acceleration.x,
                         imuPtr->linear_acceleration.y,
@@ -286,8 +291,6 @@ private:
         // "]\n";
       }
 
-      // imgBuf_.pop(); // Safely pop the image from the buffer here
-
       if (vImuMeas.empty())
       {
         RCLCPP_WARN(this->get_logger(),
@@ -297,7 +300,7 @@ private:
         return; // Skip processing this frame
       }
 
-      cv::imshow("test", imageFrame);
+      cv::imshow("Normal Image", imageFrame);
       cv::waitKey(1);
       try
       {
@@ -318,9 +321,29 @@ private:
     }
   }
 
+  void image_callback(const sensor_msgs::msg::Image::SharedPtr msg)
+  {
+    bufMutexImg_.lock();
+    bufMutex_.lock();
+
+    imgBuf_.push(msg);
+    imuBuf_.push(imuBufTmp_);
+
+    output_video << get_image(msg); // write the frame to the output video
+
+    // add the temporary imu queue to the main imu queue
+    while (!imuBufTmp_.empty())
+    {
+      imuBufTmp_.pop();
+    }
+
+    bufMutexImg_.unlock();
+    bufMutex_.unlock();
+  }
+
   void imu_callback(const sensor_msgs::msg::Imu &msg)
   {
-
+    bufMutex_.lock();
     if (!std::isnan(msg.linear_acceleration.x) &&
         !std::isnan(msg.linear_acceleration.y) &&
         !std::isnan(msg.linear_acceleration.z) &&
@@ -328,16 +351,15 @@ private:
         !std::isnan(msg.angular_velocity.y) &&
         !std::isnan(msg.angular_velocity.z))
     {
-      bufMutex_.lock();
       const sensor_msgs::msg::Imu::SharedPtr msg_ptr =
         std::make_shared<sensor_msgs::msg::Imu>(msg);
-      imuBuf_.push(msg_ptr);
-      bufMutex_.unlock();
+      imuBufTmp_.push(msg_ptr);
     }
     else
     {
       RCLCPP_ERROR(this->get_logger(), "Invalid IMU data - Rxd NaN");
     }
+    bufMutex_.unlock();
   }
 
   rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr image_sub;
@@ -351,6 +373,7 @@ private:
   std::string sensor_type_param;
 
   cv::VideoCapture input_video;
+  cv::VideoWriter output_video;
   std::ifstream imu_file;
   std::ifstream video_timestamp_file;
 
@@ -359,7 +382,8 @@ private:
   std::vector<geometry_msgs::msg::Vector3> vAccel;
   std::vector<double> vAccel_times;
 
-  queue<sensor_msgs::msg::Imu::SharedPtr> imuBuf_;
+  queue<queue<sensor_msgs::msg::Imu::SharedPtr>> imuBuf_;
+  queue<sensor_msgs::msg::Imu::SharedPtr> imuBufTmp_;
   queue<sensor_msgs::msg::Image::SharedPtr> imgBuf_;
   std::mutex bufMutex_, bufMutexImg_;
   // std::thread *syncThread_;
