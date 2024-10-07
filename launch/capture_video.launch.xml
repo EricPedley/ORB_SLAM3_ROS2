@@ -1,12 +1,12 @@
 <launch>
-    <arg name="file_name" default="output.mp4"/>
+    <arg name="video_name" default="output.mp4"/>
     <include file="$(find-pkg-share realsense2_camera)/launch/rs_launch.py">
         <arg name="enable_accel" value="true"/>
         <arg name="enable_gyro" value="true"/>
         <arg name="unite_imu_method" value="2"/>
     </include>
-    <node pkg="ros2_orb_slam3" exec="capture_video">
-        <param name="video_name" value="$(var file_name)"/>
+    <node pkg="orb_slam3_ros2" exec="capture_video">
+        <param name="video_name" value="$(var video_name)"/>
     </node>
     <!-- <executable cmd="ros2 bag record -a -o $(var file_name)"/> -->
 </launch>

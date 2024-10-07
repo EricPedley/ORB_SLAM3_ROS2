@@ -1,5 +1,6 @@
 #include <geometry_msgs/msg/quaternion.hpp>
 #include <geometry_msgs/msg/vector3.hpp>
+#include <opencv2/calib3d.hpp>
 #include <sensor_msgs/msg/image.hpp>
 #include <sensor_msgs/msg/imu.hpp>
 #include <sensor_msgs/msg/point_cloud.hpp>
@@ -47,6 +48,8 @@ public:
       create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
     auto imu_callback_group =
       create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
+    auto slam_service_callback_group =
+      create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
 
     rclcpp::SubscriptionOptions image_options;
     image_options.callback_group = image_callback_group;
@@ -59,7 +62,7 @@ public:
     {
       sensor_type = ORB_SLAM3::System::MONOCULAR;
       settings_file_path = std::string(PROJECT_PATH) +
-                           "/orb_slam3/config/Monocular/RealSense_D435i.yaml";
+                           "/config/Monocular/RealSense_D435i.yaml";
     }
     else if (sensor_type_param == "imu-monocular")
     {
@@ -120,21 +123,22 @@ public:
     }
 
     // video writer stuff
-    if (use_live_feed) {
+    if (use_live_feed)
+    {
       video_name = generate_timestamp_string();
     }
+    video_name =
+      std::string(PROJECT_PATH) + "/ORB_SLAM3_ROS2/videos/" + video_name;
     output_video.open(
-      video_name, cv::VideoWriter::fourcc('a', 'v', 'c', '1'), 30,
+      video_name, cv::VideoWriter::fourcc('m', 'p', '4', 'v'), 30,
       cv::Size(1280, 720),
-      false); // codec: avc1, frameRate: 30, resolution 1280x720, isColor: false
+      false); // codec: mp4v, frameRate: 30, resolution 1280x720, isColor: false
 
     // setup orb slam object
     pAgent = std::make_shared<ORB_SLAM3::System>(
       vocabulary_file_path, settings_file_path, sensor_type, use_pangolin, 0);
     // syncThread_ = new std::thread(&ImuMonoRealSense::sync_with_imu,
     // this);
-
-    image_scale = pAgent->GetImageScale();
 
     // create subscriptions
     // create qos options
@@ -161,7 +165,7 @@ public:
   ~ImuMonoRealSense()
   {
     pAgent->Shutdown();
-    pAgent->SaveKeyFrameTrajectoryTUM("KeyFrameTrajectory.txt");
+    // pAgent->SaveKeyFrameTrajectoryTUM("KeyFrameTrajectory.txt");
 
     if (use_live_feed)
     {
@@ -175,7 +179,7 @@ private:
   std::string generate_timestamp_string()
   {
     std::time_t now = std::time(nullptr);
-    std::tm* ptm = std::localtime(&now);
+    std::tm *ptm = std::localtime(&now);
 
     std::ostringstream oss;
 
@@ -249,6 +253,8 @@ private:
   void slam_service_callback(const std_srvs::srv::Empty::Request::SharedPtr,
                              const std_srvs::srv::Empty::Response::SharedPtr)
   {
+    RCLCPP_INFO_STREAM(get_logger(),
+                       "SLAM service called, running SLAM on collected data");
     if (imgBuf_.size() != imuBuf_.size())
     {
       RCLCPP_ERROR_STREAM(
@@ -319,6 +325,7 @@ private:
                      e.what());
       }
     }
+    rclcpp::shutdown();
   }
 
   void image_callback(const sensor_msgs::msg::Image::SharedPtr msg)
@@ -326,12 +333,17 @@ private:
     bufMutexImg_.lock();
     bufMutex_.lock();
 
+    RCLCPP_INFO_STREAM(get_logger(), "got image");
+
     imgBuf_.push(msg);
     imuBuf_.push(imuBufTmp_);
 
+    cv::imshow("Normal Image", get_image(msg));
+    cv::waitKey(1);
+
     output_video << get_image(msg); // write the frame to the output video
 
-    // add the temporary imu queue to the main imu queue
+    // clear the temp imu buffer
     while (!imuBufTmp_.empty())
     {
       imuBufTmp_.pop();
@@ -391,7 +403,6 @@ private:
   std::shared_ptr<ORB_SLAM3::System> pAgent;
   std::string vocabulary_file_path;
   std::string settings_file_path;
-  float image_scale;
 
   std::shared_ptr<ORB_SLAM3::IMU::Point> initial_orientation;
 };
@@ -399,10 +410,7 @@ private:
 int main(int argc, char *argv[])
 {
   rclcpp::init(argc, argv);
-  rclcpp::executors::MultiThreadedExecutor executor;
-  auto n = std::make_shared<ImuMonoRealSense>();
-  executor.add_node(n);
-  executor.spin();
+  rclcpp::spin(std::make_shared<ImuMonoRealSense>());
   rclcpp::shutdown();
   return 0;
 }
