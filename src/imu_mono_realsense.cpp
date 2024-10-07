@@ -22,11 +22,10 @@
 using namespace std::chrono_literals;
 using std::placeholders::_1, std::placeholders::_2;
 
-class ImuMonoRealSense : public rclcpp::Node
-{
+class ImuMonoRealSense : public rclcpp::Node {
 public:
   ImuMonoRealSense()
-    : Node("imu_mono_realsense"),
+    : Node("imu_mono_realsense"), capture_data(true),
       vocabulary_file_path(std::string(PROJECT_PATH) +
                            "/ORB_SLAM3/Vocabulary/ORBvoc.txt")
   {
@@ -58,20 +57,15 @@ public:
 
     // set the sensor type based on parameter
     ORB_SLAM3::System::eSensor sensor_type;
-    if (sensor_type_param == "monocular")
-    {
+    if (sensor_type_param == "monocular") {
       sensor_type = ORB_SLAM3::System::MONOCULAR;
-      settings_file_path = std::string(PROJECT_PATH) +
-                           "/config/Monocular/RealSense_D435i.yaml";
-    }
-    else if (sensor_type_param == "imu-monocular")
-    {
+      settings_file_path =
+        std::string(PROJECT_PATH) + "/config/Monocular/RealSense_D435i.yaml";
+    } else if (sensor_type_param == "imu-monocular") {
       sensor_type = ORB_SLAM3::System::IMU_MONOCULAR;
       settings_file_path = std::string(PROJECT_PATH) +
                            "/config/Monocular-Inertial/RealSense_D435i.yaml";
-    }
-    else
-    {
+    } else {
       RCLCPP_ERROR(get_logger(), "Sensor type not recognized");
       rclcpp::shutdown();
     }
@@ -83,13 +77,10 @@ public:
     std::string imu_file_name = std::string(PROJECT_PATH) + "/videos/" +
                                 video_name.substr(0, video_name.length() - 4) +
                                 ".csv";
-    if (use_live_feed)
-    {
+    if (use_live_feed) {
       // dont open anything
       input_video.open(0);
-    }
-    else
-    {
+    } else {
       // open the imu file
       imu_file.open(imu_file_name);
 
@@ -103,28 +94,21 @@ public:
       input_video.open(std::string(PROJECT_PATH) + "/videos/" + video_name);
     }
 
-    if (!input_video.isOpened() && !use_live_feed)
-    {
+    if (!input_video.isOpened() && !use_live_feed) {
       RCLCPP_ERROR(get_logger(), "Could not open video file for reading");
-    }
-    else
-    {
+    } else {
       RCLCPP_INFO(get_logger(), "Opened video file for reading");
     }
 
-    if (!imu_file.is_open() && !use_live_feed)
-    {
+    if (!imu_file.is_open() && !use_live_feed) {
       RCLCPP_ERROR_STREAM(
         get_logger(), "Could not open imu file for reading: " << imu_file_name);
-    }
-    else
-    {
+    } else {
       RCLCPP_INFO(get_logger(), "Opened imu file for reading");
     }
 
     // video writer stuff
-    if (use_live_feed)
-    {
+    if (use_live_feed) {
       video_name = generate_timestamp_string();
     }
     video_name =
@@ -167,8 +151,7 @@ public:
     pAgent->Shutdown();
     // pAgent->SaveKeyFrameTrajectoryTUM("KeyFrameTrajectory.txt");
 
-    if (use_live_feed)
-    {
+    if (use_live_feed) {
       vector<ORB_SLAM3::MapPoint *> map_points = pAgent->GetTrackedMapPoints();
       save_map_to_csv(map_points);
       pAgent->Shutdown();
@@ -193,8 +176,7 @@ private:
     std::ofstream map_file;
     // add date and time to the map file name
     std::string time_string;
-    if (use_live_feed)
-    {
+    if (use_live_feed) {
       std::time_t now =
         std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
       time_string = std::ctime(&now);
@@ -204,8 +186,7 @@ private:
                                 video_name.substr(0, video_name.length() - 4) +
                                 "_" + time_string + "map" + ".csv";
     map_file.open(map_file_name);
-    if (map_file.is_open())
-    {
+    if (map_file.is_open()) {
       // map_file << initial_orientation->a[0] << "," <<
       // initial_orientation->a[1]
       //   << "," << initial_orientation->a[2] << "," <<
@@ -213,15 +194,12 @@ private:
       //   << "," << initial_orientation->w[1] << "," <<
       //   initial_orientation->w[2]
       //   << std::endl;
-      for (auto &map_point : map_points)
-      {
+      for (auto &map_point : map_points) {
         Eigen::Vector3f pos = map_point->GetWorldPos();
         map_file << pos[0] << "," << pos[1] << "," << pos[2] << std::endl;
       }
       map_file.close();
-    }
-    else
-    {
+    } else {
       RCLCPP_ERROR(get_logger(), "Could not open map file for writing");
     }
   }
@@ -230,21 +208,15 @@ private:
   {
     cv_bridge::CvImageConstPtr cv_ptr;
 
-    try
-    {
+    try {
       cv_ptr = cv_bridge::toCvShare(msg, sensor_msgs::image_encodings::MONO8);
-    }
-    catch (cv_bridge::Exception &e)
-    {
+    } catch (cv_bridge::Exception &e) {
       RCLCPP_ERROR(this->get_logger(), "cv_bridge exception: %s", e.what());
     }
 
-    if (cv_ptr->image.type() == 0)
-    {
+    if (cv_ptr->image.type() == 0) {
       return cv_ptr->image.clone();
-    }
-    else
-    {
+    } else {
       std::cerr << "Error image type" << std::endl;
       return cv_ptr->image.clone();
     }
@@ -253,18 +225,17 @@ private:
   void slam_service_callback(const std_srvs::srv::Empty::Request::SharedPtr,
                              const std_srvs::srv::Empty::Response::SharedPtr)
   {
+    capture_data = false;
     RCLCPP_INFO_STREAM(get_logger(),
                        "SLAM service called, running SLAM on collected data");
-    if (imgBuf_.size() != imuBuf_.size())
-    {
+    if (imgBuf_.size() != imuBuf_.size()) {
       RCLCPP_ERROR_STREAM(
         this->get_logger(),
         "IMU and Image buffers are not of the same size. Imu buf size: "
           << imuBuf_.size() << ", Image buf size: " << imgBuf_.size());
       return;
     }
-    while (!imgBuf_.empty())
-    {
+    while (!imgBuf_.empty()) {
       auto imgPtr = imgBuf_.front();
       imgBuf_.pop();
       double tImage =
@@ -276,8 +247,7 @@ private:
       vector<ORB_SLAM3::IMU::Point> vImuMeas;
       auto current_imu_buf = imuBuf_.front();
 
-      while (!current_imu_buf.empty())
-      {
+      while (!current_imu_buf.empty()) {
         auto imuPtr = current_imu_buf.front();
         current_imu_buf.pop();
         double tIMU =
@@ -297,8 +267,7 @@ private:
         // "]\n";
       }
 
-      if (vImuMeas.empty())
-      {
+      if (vImuMeas.empty()) {
         RCLCPP_WARN(this->get_logger(),
                     "No valid IMU data available for the current frame "
                     "at time %.6f.",
@@ -306,21 +275,17 @@ private:
         return; // Skip processing this frame
       }
 
-      cv::imshow("Normal Image", imageFrame);
-      cv::waitKey(1);
-      try
-      {
-        pAgent->TrackMonocular(imageFrame, tImage, vImuMeas);
-        // RCLCPP_INFO_STREAM(get_logger(), "Image at "
-        //                                      << tImage
-        //                                      << " processed with IMU
-        //                                      "
-        //                                         "data: \n"
-        //                                      <<
-        //                                      imu_data_stream.str());
-      }
-      catch (const std::exception &e)
-      {
+      try {
+        if (sensor_type_param == "monocular") {
+          RCLCPP_INFO_STREAM(get_logger(), "monocular mode");
+          pAgent->TrackMonocular(imageFrame, tImage);
+        } else {
+          pAgent->TrackMonocular(imageFrame, tImage, vImuMeas);
+        }
+        // pAgent->TrackMonocular(imageFrame, tImage, vImuMeas);
+        RCLCPP_INFO_STREAM(this->get_logger(),
+                           "Processed frame at time " << tImage);
+      } catch (const std::exception &e) {
         RCLCPP_ERROR(this->get_logger(), "SLAM processing exception: %s",
                      e.what());
       }
@@ -330,48 +295,46 @@ private:
 
   void image_callback(const sensor_msgs::msg::Image::SharedPtr msg)
   {
-    bufMutexImg_.lock();
-    bufMutex_.lock();
+    if (capture_data) {
+      bufMutexImg_.lock();
+      bufMutex_.lock();
 
-    RCLCPP_INFO_STREAM(get_logger(), "got image");
+      imgBuf_.push(msg);
+      imuBuf_.push(imuBufTmp_);
 
-    imgBuf_.push(msg);
-    imuBuf_.push(imuBufTmp_);
+      cv::imshow("Normal Image", get_image(msg));
+      cv::waitKey(1);
 
-    cv::imshow("Normal Image", get_image(msg));
-    cv::waitKey(1);
+      output_video << get_image(msg); // write the frame to the output video
 
-    output_video << get_image(msg); // write the frame to the output video
+      // clear the temp imu buffer
+      while (!imuBufTmp_.empty()) {
+        imuBufTmp_.pop();
+      }
 
-    // clear the temp imu buffer
-    while (!imuBufTmp_.empty())
-    {
-      imuBufTmp_.pop();
+      bufMutexImg_.unlock();
+      bufMutex_.unlock();
     }
-
-    bufMutexImg_.unlock();
-    bufMutex_.unlock();
   }
 
   void imu_callback(const sensor_msgs::msg::Imu &msg)
   {
-    bufMutex_.lock();
-    if (!std::isnan(msg.linear_acceleration.x) &&
-        !std::isnan(msg.linear_acceleration.y) &&
-        !std::isnan(msg.linear_acceleration.z) &&
-        !std::isnan(msg.angular_velocity.x) &&
-        !std::isnan(msg.angular_velocity.y) &&
-        !std::isnan(msg.angular_velocity.z))
-    {
-      const sensor_msgs::msg::Imu::SharedPtr msg_ptr =
-        std::make_shared<sensor_msgs::msg::Imu>(msg);
-      imuBufTmp_.push(msg_ptr);
+    if (capture_data) {
+      bufMutex_.lock();
+      if (!std::isnan(msg.linear_acceleration.x) &&
+          !std::isnan(msg.linear_acceleration.y) &&
+          !std::isnan(msg.linear_acceleration.z) &&
+          !std::isnan(msg.angular_velocity.x) &&
+          !std::isnan(msg.angular_velocity.y) &&
+          !std::isnan(msg.angular_velocity.z)) {
+        const sensor_msgs::msg::Imu::SharedPtr msg_ptr =
+          std::make_shared<sensor_msgs::msg::Imu>(msg);
+        imuBufTmp_.push(msg_ptr);
+      } else {
+        RCLCPP_ERROR(this->get_logger(), "Invalid IMU data - Rxd NaN");
+      }
+      bufMutex_.unlock();
     }
-    else
-    {
-      RCLCPP_ERROR(this->get_logger(), "Invalid IMU data - Rxd NaN");
-    }
-    bufMutex_.unlock();
   }
 
   rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr image_sub;
@@ -381,6 +344,7 @@ private:
   sensor_msgs::msg::Imu imu_msg;
 
   bool use_live_feed;
+  bool capture_data;
   std::string video_name;
   std::string sensor_type_param;
 

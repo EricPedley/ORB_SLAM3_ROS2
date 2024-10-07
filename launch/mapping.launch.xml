@@ -5,6 +5,7 @@
     <arg name="video_name" default="default.mp4"/>
     <arg name="bag_name" default="changeme"/>
     <include file="$(find-pkg-share realsense2_camera)/launch/rs_launch.py" if="$(eval '\'$(var use_live_feed)\' == \'true\'')">
+        <arg name="rgb_camera.color_profile" value="640x480x30"/>
         <arg name="enable_accel" value="true"/>
         <arg name="enable_gyro" value="true"/>
         <arg name="unite_imu_method" value="2"/>
