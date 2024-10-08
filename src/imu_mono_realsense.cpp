@@ -31,16 +31,22 @@ public:
   {
 
     // declare parameters
+    declare_parameter("localization_mode", false);
     declare_parameter("sensor_type", "imu-monocular");
     declare_parameter("use_pangolin", true);
     declare_parameter("use_live_feed", true);
     declare_parameter("video_name", "ChangeMe.mp4");
+    declare_parameter("save_map", false);
+    declare_parameter("load_map", "ChangeMe.osa");
 
     // get parameters
+    localization_mode = get_parameter("localization_mode").as_bool();
     sensor_type_param = get_parameter("sensor_type").as_string();
     bool use_pangolin = get_parameter("use_pangolin").as_bool();
     use_live_feed = get_parameter("use_live_feed").as_bool();
     video_name = get_parameter("video_name").as_string();
+    save_map = get_parameter("save_map").as_bool();
+    load_map = get_parameter("load_map").as_string();
 
     // define callback groups
     auto image_callback_group =
@@ -399,7 +405,10 @@ private:
   sensor_msgs::msg::Imu imu_msg;
 
   bool use_live_feed;
+  bool localization_mode;
   bool capture_data;
+  bool save_map;
+  std::string load_map;
   std::string video_name;
   std::string sensor_type_param;
 

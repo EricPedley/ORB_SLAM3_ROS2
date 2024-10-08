@@ -1,4 +1,7 @@
 <launch>
+    <arg name="save_map" default="false"/>
+    <arg name="load_map" default="ChangeMe.osa"/>
+    <arg name="localization_mode" default="false"/>
     <arg name="sensor_type" default="imu-monocular"/>
     <arg name="use_pangolin" default="true"/>
     <arg name="use_live_feed" default="true"/>
@@ -12,6 +15,7 @@
         <arg name="enable_depth" value="false"/>
     </include>
     <node pkg="orb_slam3_ros2" exec="imu_mono_node_cpp" output="screen">
+        <param name="localization_mode" value="$(var localization_mode)"/>
         <param name="sensor_type" value="$(var sensor_type)"/>
         <param name="use_pangolin" value="true"/>
         <param name="use_live_feed" value="$(var use_live_feed)"/>
