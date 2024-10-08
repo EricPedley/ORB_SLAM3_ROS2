@@ -359,7 +359,6 @@ private:
 
           try {
             if (sensor_type_param == "monocular") {
-              RCLCPP_INFO_STREAM(get_logger(), "monocular mode");
               pAgent->TrackMonocular(imageFrame, tImage);
             } else {
               pAgent->TrackMonocular(imageFrame, tImage, vImuMeas);
