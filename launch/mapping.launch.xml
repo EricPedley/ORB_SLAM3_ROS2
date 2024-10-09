@@ -1,6 +1,7 @@
 <launch>
     <arg name="save_map" default="false"/>
-    <arg name="load_map" default="ChangeMe.osa"/>
+    <arg name="load_map" default="false"/>
+    <arg name="map_only" default="false"/>
     <arg name="localization_mode" default="false"/>
     <arg name="sensor_type" default="imu-monocular"/>
     <arg name="use_pangolin" default="true"/>
@@ -8,13 +9,15 @@
     <arg name="video_name" default="default.mp4"/>
     <arg name="bag_name" default="changeme"/>
     <include file="$(find-pkg-share realsense2_camera)/launch/rs_launch.py" if="$(eval '\'$(var use_live_feed)\' == \'true\'')">
+        <arg name="initial_reset" value="true"/>
         <arg name="rgb_camera.color_profile" value="640x480x30"/>
         <arg name="enable_accel" value="true"/>
         <arg name="enable_gyro" value="true"/>
         <arg name="unite_imu_method" value="2"/>
         <arg name="enable_depth" value="false"/>
     </include>
-    <node pkg="orb_slam3_ros2" exec="imu_mono_node_cpp" output="screen">
+    <node pkg="orb_slam3_ros2" exec="imu_mono_node_cpp" output="screen" launch-prefix="gdb -ex run --args">
+        <param name="map_only" value="$(var map_only)"/>
         <param name="localization_mode" value="$(var localization_mode)"/>
         <param name="sensor_type" value="$(var sensor_type)"/>
         <param name="use_pangolin" value="true"/>

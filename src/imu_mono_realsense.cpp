@@ -31,6 +31,7 @@ public:
   {
 
     // declare parameters
+    declare_parameter("map_only", false);
     declare_parameter("localization_mode", false);
     declare_parameter("sensor_type", "imu-monocular");
     declare_parameter("use_pangolin", true);
@@ -40,6 +41,8 @@ public:
     declare_parameter("load_map", "ChangeMe.osa");
 
     // get parameters
+
+    map_only = get_parameter("map_only").as_bool();
     localization_mode = get_parameter("localization_mode").as_bool();
     sensor_type_param = get_parameter("sensor_type").as_string();
     bool use_pangolin = get_parameter("use_pangolin").as_bool();
@@ -81,7 +84,8 @@ public:
 
     // // open the video and imu files, if required
     // std::string imu_file_name = std::string(PROJECT_PATH) + "/videos/" +
-    //                             video_name.substr(0, video_name.length() - 4) +
+    //                             video_name.substr(0, video_name.length() - 4)
+    //                             +
     //                             ".csv";
     // if (use_live_feed) {
     //   // dont open anything
@@ -108,7 +112,8 @@ public:
     //
     // if (!imu_file.is_open() && !use_live_feed) {
     //   RCLCPP_ERROR_STREAM(
-    //     get_logger(), "Could not open imu file for reading: " << imu_file_name);
+    //     get_logger(), "Could not open imu file for reading: " <<
+    //     imu_file_name);
     // } else {
     //   RCLCPP_INFO(get_logger(), "Opened imu file for reading");
     // }
@@ -117,8 +122,7 @@ public:
     if (use_live_feed) {
       video_name = generate_timestamp_string();
     }
-    video_name =
-      std::string(PROJECT_PATH) + "/videos/" + video_name;
+    video_name = std::string(PROJECT_PATH) + "/videos/" + video_name;
     output_video.open(
       video_name, cv::VideoWriter::fourcc('m', 'p', '4', 'v'), 30,
       cv::Size(1280, 720),
@@ -149,18 +153,14 @@ public:
       std::bind(&ImuMonoRealSense::slam_service_callback, this, _1, _2));
   }
 
-  ~ImuMonoRealSense()
-  {
-    pAgent->Shutdown();
-    // pAgent->SaveKeyFrameTrajectoryTUM("KeyFrameTrajectory.txt");
-
-
-    if (use_live_feed) {
-      vector<ORB_SLAM3::MapPoint *> map_points = pAgent->GetTrackedMapPoints();
-      save_map_to_csv(map_points);
-      pAgent->Shutdown();
-    }
-  }
+  // ~ImuMonoRealSense()
+  // {
+  //   if (use_live_feed) {
+  //     vector<ORB_SLAM3::MapPoint *> map_points = pAgent->GetTrackedMapPoints();
+  //     save_map_to_csv(map_points);
+  //     pAgent->Shutdown();
+  //   }
+  // }
 
 private:
   std::string generate_timestamp_string()
@@ -215,7 +215,7 @@ private:
     try {
       cv_ptr = cv_bridge::toCvShare(msg, sensor_msgs::image_encodings::MONO8);
     } catch (cv_bridge::Exception &e) {
-      RCLCPP_ERROR(this->get_logger(), "cv_bridge exception: %s", e.what());
+      RCLCPP_ERROR(get_logger(), "cv_bridge exception: %s", e.what());
     }
 
     if (cv_ptr->image.type() == 0) {
@@ -229,67 +229,7 @@ private:
   void slam_service_callback(const std_srvs::srv::Empty::Request::SharedPtr,
                              const std_srvs::srv::Empty::Response::SharedPtr)
   {
-    capture_data = false;
-    RCLCPP_INFO_STREAM(get_logger(),
-                       "SLAM service called, running SLAM on collected data");
-    // sanity check
-    if (imgBuf_.size() != imuBuf_.size()) {
-      RCLCPP_ERROR_STREAM(
-        this->get_logger(),
-        "IMU and Image buffers are not of the same size. Imu buf size: "
-          << imuBuf_.size() << ", Image buf size: " << imgBuf_.size());
-      return;
-    }
-    while (!imgBuf_.empty()) {
-      auto imgPtr = imgBuf_.front();
-      imgBuf_.pop();
-      double tImage =
-        imgPtr->header.stamp.sec + imgPtr->header.stamp.nanosec * 1e-9;
-
-      cv::Mat imageFrame = get_image(imgPtr); // Process image before popping
-      std::stringstream imu_data_stream;
-
-      vector<ORB_SLAM3::IMU::Point> vImuMeas;
-      auto current_imu_buf = imuBuf_.front();
-
-      while (!current_imu_buf.empty()) {
-        auto imuPtr = current_imu_buf.front();
-        current_imu_buf.pop();
-        double tIMU =
-          imuPtr->header.stamp.sec + imuPtr->header.stamp.nanosec * 1e-9;
-
-        cv::Point3f acc(imuPtr->linear_acceleration.x,
-                        imuPtr->linear_acceleration.y,
-                        imuPtr->linear_acceleration.z);
-        cv::Point3f gyr(imuPtr->angular_velocity.x, imuPtr->angular_velocity.y,
-                        imuPtr->angular_velocity.z);
-        vImuMeas.push_back(ORB_SLAM3::IMU::Point(acc, gyr, tIMU));
-      }
-
-      if (vImuMeas.empty()) {
-        RCLCPP_WARN(this->get_logger(),
-                    "No valid IMU data available for the current frame "
-                    "at time %.6f.",
-                    tImage);
-        return; // Skip processing this frame
-      }
-
-      try {
-        if (sensor_type_param == "monocular") {
-          RCLCPP_INFO_STREAM(get_logger(), "monocular mode");
-          pAgent->TrackMonocular(imageFrame, tImage);
-        } else {
-          pAgent->TrackMonocular(imageFrame, tImage, vImuMeas);
-        }
-        // pAgent->TrackMonocular(imageFrame, tImage, vImuMeas);
-        RCLCPP_INFO_STREAM(this->get_logger(),
-                           "Processed frame at time " << tImage);
-      } catch (const std::exception &e) {
-        RCLCPP_ERROR(this->get_logger(), "SLAM processing exception: %s",
-                     e.what());
-      }
-    }
-    rclcpp::shutdown();
+    pAgent->Shutdown();
   }
 
   void image_callback(const sensor_msgs::msg::Image::SharedPtr msg)
@@ -317,7 +257,7 @@ private:
       // sanity check
       // if (imgBuf_.size() != imuBuf_.size()) {
       //   RCLCPP_ERROR_STREAM(
-      //       this->get_logger(),
+      //       get_logger(),
       //       "IMU and Image buffers are not of the same size. Imu buf size: "
       //       << imuBuf_.size() << ", Image buf size: " << imgBuf_.size());
       //   return;
@@ -334,7 +274,8 @@ private:
           double tImage =
             imgPtr->header.stamp.sec + imgPtr->header.stamp.nanosec * 1e-9;
 
-          // grab the oldest imu data, which should correspond to the image variable
+          // grab the oldest imu data, which should correspond to the image
+          // variable
           std::stringstream imu_data_stream;
 
           vector<ORB_SLAM3::IMU::Point> vImuMeas;
@@ -348,30 +289,33 @@ private:
               imuPtr->header.stamp.sec + imuPtr->header.stamp.nanosec * 1e-9;
 
             cv::Point3f acc(imuPtr->linear_acceleration.x,
-                imuPtr->linear_acceleration.y,
-                imuPtr->linear_acceleration.z);
-            cv::Point3f gyr(imuPtr->angular_velocity.x, imuPtr->angular_velocity.y,
-                imuPtr->angular_velocity.z);
+                            imuPtr->linear_acceleration.y,
+                            imuPtr->linear_acceleration.z);
+            cv::Point3f gyr(imuPtr->angular_velocity.x,
+                            imuPtr->angular_velocity.y,
+                            imuPtr->angular_velocity.z);
             vImuMeas.push_back(ORB_SLAM3::IMU::Point(acc, gyr, tIMU));
           }
 
-          if (vImuMeas.empty()) {
-            RCLCPP_WARN(this->get_logger(),
-                "No valid IMU data available for the current frame "
-                "at time %.6f.",
-                tImage);
+          if (vImuMeas.empty() && sensor_type_param == "imu-monocular") {
+            RCLCPP_WARN(get_logger(),
+                        "No valid IMU data available for the current frame "
+                        "at time %.6f.",
+                        tImage);
             return;
           }
 
           try {
-            if (sensor_type_param == "monocular") {
-              pAgent->TrackMonocular(imageFrame, tImage);
-            } else {
-              pAgent->TrackMonocular(imageFrame, tImage, vImuMeas);
+            if (!map_only) {
+              if (sensor_type_param == "monocular") {
+                pAgent->TrackMonocular(imageFrame, tImage);
+              } else {
+                pAgent->TrackMonocular(imageFrame, tImage, vImuMeas);
+              }
             }
           } catch (const std::exception &e) {
-            RCLCPP_ERROR(this->get_logger(), "SLAM processing exception: %s",
-                e.what());
+            RCLCPP_ERROR(get_logger(), "SLAM processing exception: %s",
+                         e.what());
           }
         }
       }
@@ -392,7 +336,7 @@ private:
           std::make_shared<sensor_msgs::msg::Imu>(msg);
         imuBufTmp_.push(msg_ptr);
       } else {
-        RCLCPP_ERROR(this->get_logger(), "Invalid IMU data - Rxd NaN");
+        RCLCPP_ERROR(get_logger(), "Invalid IMU data - Rxd NaN");
       }
       bufMutex_.unlock();
     }
@@ -404,6 +348,7 @@ private:
 
   sensor_msgs::msg::Imu imu_msg;
 
+  bool map_only;
   bool use_live_feed;
   bool localization_mode;
   bool capture_data;

@@ -67,7 +67,8 @@ Viewer.ViewpointY: -0.7
 Viewer.ViewpointZ: -3.5
 Viewer.ViewpointF: 500.0
 
-# #--------------------------------------------------------------------------------------------
-# # Atlas Parameters
-# #--------------------------------------------------------------------------------------------
-# System.SaveAtlasToFile: "./test"
+#--------------------------------------------------------------------------------------------
+# Atlas Parameters
+#--------------------------------------------------------------------------------------------
+System.SaveAtlasToFile: "ORB_SLAM3_ROS2/maps/prev_atlas"
+# System.LoadAtlasFromFile: "ORB_SLAM3_ROS2/maps/prev_atlas"
