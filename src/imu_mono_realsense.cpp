@@ -273,6 +273,7 @@ private:
                             imuPtr->angular_velocity.z);
             vImuMeas.push_back(ORB_SLAM3::IMU::Point(acc, gyr, tIMU));
           }
+
           bufMutexImu_.unlock();
 
           if (vImuMeas.empty() && sensor_type_param == "imu-monocular") {
