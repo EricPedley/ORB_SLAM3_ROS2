@@ -16,7 +16,7 @@
         <arg name="unite_imu_method" value="2"/>
         <arg name="enable_depth" value="false"/>
     </include>
-    <node pkg="orb_slam3_ros2" exec="imu_mono_node_cpp" output="screen" launch-prefix="gdb -ex run --args">
+    <node pkg="orb_slam3_ros2" exec="imu_mono_node_cpp" output="screen">
         <param name="map_only" value="$(var map_only)"/>
         <param name="localization_mode" value="$(var localization_mode)"/>
         <param name="sensor_type" value="$(var sensor_type)"/>

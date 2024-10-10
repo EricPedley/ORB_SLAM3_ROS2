@@ -1,6 +1,7 @@
 #include <geometry_msgs/msg/quaternion.hpp>
 #include <geometry_msgs/msg/vector3.hpp>
 #include <opencv2/calib3d.hpp>
+#include <rclcpp/logging.hpp>
 #include <sensor_msgs/msg/image.hpp>
 #include <sensor_msgs/msg/imu.hpp>
 #include <sensor_msgs/msg/point_cloud.hpp>
@@ -235,33 +236,13 @@ private:
   void image_callback(const sensor_msgs::msg::Image::SharedPtr msg)
   {
     if (capture_data) {
-      bufMutexImg_.lock();
-      bufMutex_.lock();
 
-      imgBuf_.push(msg);
-      imuBuf_.push(imuBufTmp_);
-
-      cv::imshow("Normal Image", get_image(msg));
-      cv::waitKey(1);
+      // cv::imshow("Normal Image", get_image(msg));
+      // cv::waitKey(1);
 
       output_video << get_image(msg); // write the frame to the output video
 
-      // clear the temp imu buffer
-      while (!imuBufTmp_.empty()) {
-        imuBufTmp_.pop();
-      }
-
-      bufMutexImg_.unlock();
-      bufMutex_.unlock();
-
-      // sanity check
-      // if (imgBuf_.size() != imuBuf_.size()) {
-      //   RCLCPP_ERROR_STREAM(
-      //       get_logger(),
-      //       "IMU and Image buffers are not of the same size. Imu buf size: "
-      //       << imuBuf_.size() << ", Image buf size: " << imgBuf_.size());
-      //   return;
-      // }
+      imgBuf_.push(msg);
 
       if (use_live_feed) {
         // begin to empty the imgBuf_ queue, which is full of other queues
@@ -274,17 +255,13 @@ private:
           double tImage =
             imgPtr->header.stamp.sec + imgPtr->header.stamp.nanosec * 1e-9;
 
-          // grab the oldest imu data, which should correspond to the image
-          // variable
-          std::stringstream imu_data_stream;
-
           vector<ORB_SLAM3::IMU::Point> vImuMeas;
-          auto current_imu_buf = imuBuf_.front();
 
           // package all the imu data for this image for orbslam3 to process
-          while (!current_imu_buf.empty()) {
-            auto imuPtr = current_imu_buf.front();
-            current_imu_buf.pop();
+          bufMutexImu_.lock();
+          while (!imuBuf_.empty()) {
+            auto imuPtr = imuBuf_.front();
+            imuBuf_.pop();
             double tIMU =
               imuPtr->header.stamp.sec + imuPtr->header.stamp.nanosec * 1e-9;
 
@@ -296,6 +273,7 @@ private:
                             imuPtr->angular_velocity.z);
             vImuMeas.push_back(ORB_SLAM3::IMU::Point(acc, gyr, tIMU));
           }
+          bufMutexImu_.unlock();
 
           if (vImuMeas.empty() && sensor_type_param == "imu-monocular") {
             RCLCPP_WARN(get_logger(),
@@ -325,7 +303,7 @@ private:
   void imu_callback(const sensor_msgs::msg::Imu &msg)
   {
     if (capture_data) {
-      bufMutex_.lock();
+      bufMutexImu_.lock();
       if (!std::isnan(msg.linear_acceleration.x) &&
           !std::isnan(msg.linear_acceleration.y) &&
           !std::isnan(msg.linear_acceleration.z) &&
@@ -334,11 +312,11 @@ private:
           !std::isnan(msg.angular_velocity.z)) {
         const sensor_msgs::msg::Imu::SharedPtr msg_ptr =
           std::make_shared<sensor_msgs::msg::Imu>(msg);
-        imuBufTmp_.push(msg_ptr);
+        imuBuf_.push(msg_ptr);
       } else {
-        RCLCPP_ERROR(get_logger(), "Invalid IMU data - Rxd NaN");
+        RCLCPP_ERROR(get_logger(), "Invalid IMU data - NaN");
       }
-      bufMutex_.unlock();
+      bufMutexImu_.unlock();
     }
   }
 
@@ -367,11 +345,9 @@ private:
   std::vector<geometry_msgs::msg::Vector3> vAccel;
   std::vector<double> vAccel_times;
 
-  queue<queue<sensor_msgs::msg::Imu::SharedPtr>> imuBuf_;
-  queue<sensor_msgs::msg::Imu::SharedPtr> imuBufTmp_;
+  queue<sensor_msgs::msg::Imu::SharedPtr> imuBuf_;
   queue<sensor_msgs::msg::Image::SharedPtr> imgBuf_;
-  std::mutex bufMutex_, bufMutexImg_;
-  // std::thread *syncThread_;
+  std::mutex bufMutexImu_, bufMutexImg_;
 
   std::shared_ptr<ORB_SLAM3::System> pAgent;
   std::string vocabulary_file_path;
