@@ -289,7 +289,11 @@ private:
               if (sensor_type_param == "monocular") {
                 pAgent->TrackMonocular(imageFrame, tImage);
               } else {
-                pAgent->TrackMonocular(imageFrame, tImage, vImuMeas);
+                if(vImuMeas.size() > 0) {
+                  pAgent->TrackMonocular(imageFrame, tImage, vImuMeas);
+                } else {
+                  pAgent->TrackMonocular(imageFrame, tImage);
+                }
               }
             }
           } catch (const std::exception &e) {
