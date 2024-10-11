@@ -7,7 +7,10 @@
     <arg name="use_pangolin" default="true"/>
     <arg name="use_live_feed" default="true"/>
     <arg name="video_name" default="default.mp4"/>
-    <arg name="bag_name" default="changeme"/>
+    <arg name="playback_bag" default="changeme"/>
+    <arg name="record_bag" default="changeme"/>
+    <arg name="bag_name" default="$(env USER)_$(eval 'datetime.datetime.now().strftime(\'%Y-%m-%d_%H-%M-%S\')')"
+    description="An optional argument for specifying a custom bag name. Otherwise, the date and time will be used for the name of the bag file."/>
     <include file="$(find-pkg-share realsense2_camera)/launch/rs_launch.py" if="$(eval '\'$(var use_live_feed)\' == \'true\'')">
         <arg name="initial_reset" value="true"/>
         <arg name="rgb_camera.color_profile" value="640x480x30"/>
@@ -20,9 +23,10 @@
         <param name="map_only" value="$(var map_only)"/>
         <param name="localization_mode" value="$(var localization_mode)"/>
         <param name="sensor_type" value="$(var sensor_type)"/>
-        <param name="use_pangolin" value="true"/>
+        <param name="use_pangolin" value="$(var use_pangolin)"/>
         <param name="use_live_feed" value="$(var use_live_feed)"/>
         <param name="video_name" value="$(var video_name)"/>
     </node>
-    <executable cmd="ros2 bag play $(find-pkg-share orb_slam3_ros2)/bags/$(var bag_name)" if="$(eval '\'$(var bag_name)\' == \'changeme\'')"/>
+    <executable cmd="ros2 bag play $(find-pkg-share orb_slam3_ros2)/bags/$(var playback_bag)" if="$(eval '\'$(var playback_bag)\' != \'changeme\'')"/>
+    <executable cmd="ros2 bag record -a -o ./ORB_SLAM3_ROS2/bags/$(var bag_name)" if="$(eval '\'$(var record_bag)\' != \'true\'')"/>
 </launch>

@@ -133,6 +133,10 @@ public:
     pAgent = std::make_shared<ORB_SLAM3::System>(
       vocabulary_file_path, settings_file_path, sensor_type, use_pangolin, 0);
 
+    if (localization_mode) {
+      pAgent->ActivateLocalizationMode();
+    }
+
     // create subscriptions
     rclcpp::QoS image_qos(rclcpp::KeepLast(10));
     image_qos.reliability(RMW_QOS_POLICY_RELIABILITY_RELIABLE);
