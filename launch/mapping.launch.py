@@ -58,7 +58,7 @@ def generate_launch_description():
                 package="orb_slam3_ros2",
                 executable="imu_mono_node_cpp",
                 output="screen",
-                # prefix="xterm -e gdb --args",
+                prefix="xterm -e gdb --args",
                 parameters=[
                     {
                         "map_only": LaunchConfiguration("map_only"),
