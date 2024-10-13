@@ -293,10 +293,8 @@ private:
               if (sensor_type_param == "monocular") {
                 pAgent->TrackMonocular(imageFrame, tImage);
               } else {
-                if(vImuMeas.size() > 0) {
+                if(vImuMeas.size() > 1) {
                   pAgent->TrackMonocular(imageFrame, tImage, vImuMeas);
-                } else {
-                  pAgent->TrackMonocular(imageFrame, tImage);
                 }
               }
             }

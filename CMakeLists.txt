@@ -6,7 +6,7 @@ set(ENV{PYTHONPATH} "/opt/ros/humble/lib/python3.10/site-packages/")
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} ${CMAKE_CURRENT_SOURCE_DIR}/CMakeModules)
 
 if(NOT CMAKE_BUILD_TYPE)        # If no build type is set, set one
-    set(CMAKE_BUILD_TYPE "Release" CACHE STRING "Type of build." FORCE)
+    set(CMAKE_BUILD_TYPE "Debug" CACHE STRING "Type of build." FORCE)
 endif()
 
 if(NOT CMAKE_CXX_STANDARD)
