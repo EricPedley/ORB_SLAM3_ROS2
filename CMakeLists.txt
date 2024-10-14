@@ -19,6 +19,7 @@ endif()
 
 set(ENV{PROJECT_PATH} "${PROJECT_SOURCE_DIR}")
 add_definitions(-DPROJECT_PATH="${PROJECT_SOURCE_DIR}")
+add_definitions(${PCL_DEFINITIONS})
 
 # find dependencies
 find_package(ament_cmake REQUIRED)
@@ -140,6 +141,7 @@ include_directories(
     ${ORB_SLAM3_ROOT_DIR}/include
     ${ORB_SLAM3_ROOT_DIR}/include/CameraModels
     ${ORB_SLAM3_ROOT_DIR}/Thirdparty/Sophus
+    ${PCL_INCLUDE_DIRS}
 )
 
 link_directories(
