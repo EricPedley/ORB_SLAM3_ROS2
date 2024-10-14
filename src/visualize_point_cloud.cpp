@@ -163,7 +163,7 @@ class VisualizePointCloud : public rclcpp::Node
 
       point_cloud2.header.frame_id = "point_cloud";
       point_cloud2.header.stamp = get_clock()->now();
-      point_cloud2.fields.push_back(x_field); 
+      point_cloud2.fields.push_back(x_field);
       point_cloud2.fields.push_back(y_field);
       point_cloud2.fields.push_back(z_field);
 
@@ -206,7 +206,7 @@ class VisualizePointCloud : public rclcpp::Node
       t.transform.rotation.w = initial_orientation.w();
       t.transform.translation.z = 0.5;
       tf_broadcaster->sendTransform(t);
-      
+
       point_cloud.header.stamp = get_clock()->now();
       point_cloud2.header.stamp = get_clock()->now();
       point_cloud_publisher->publish(point_cloud);

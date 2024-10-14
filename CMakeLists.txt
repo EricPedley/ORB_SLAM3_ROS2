@@ -39,8 +39,9 @@ find_package(OpenCV 4.4 REQUIRED)
 find_package(Sophus REQUIRED)
 find_package(Pangolin REQUIRED)
 find_package(image_transport REQUIRED)
-find_package(pcl_ros REQUIRED)
-find_package(pcl_conversions REQUIRED)
+find_package(PCL 1.12 REQUIRED)
+# find_package(pcl_ros REQUIRED)
+# find_package(pcl_conversions REQUIRED)
 
 find_package(ORB_SLAM3 REQUIRED)
 

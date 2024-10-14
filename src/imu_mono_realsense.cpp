@@ -234,7 +234,7 @@ private:
   void slam_service_callback(const std_srvs::srv::Empty::Request::SharedPtr,
                              const std_srvs::srv::Empty::Response::SharedPtr)
   {
-    pAgent->Shutdown();
+    pAgent->SavePCDBinary(std::string(PROJECT_PATH) + "/maps/");
   }
 
   void image_callback(const sensor_msgs::msg::Image::SharedPtr msg)
