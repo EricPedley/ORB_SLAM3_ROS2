@@ -14,10 +14,13 @@
 #include <sensor_msgs/msg/point_field.hpp>
 #include <std_msgs/msg/string.hpp>
 
-#include <pcl/filters/statistical_outlier_removal.h>
+#include <pcl/common/centroid.h>
 #include <pcl/filters/conditional_removal.h>
+#include <pcl/filters/extract_indices.h>
+#include <pcl/filters/statistical_outlier_removal.h>
 #include <pcl/filters/voxel_grid.h>
 #include <pcl/io/pcd_io.h>
+#include <pcl/segmentation/extract_clusters.h>
 #include <pcl/surface/convex_hull.h>
 #include <pcl/surface/mls.h>
 #include <pcl_conversions/pcl_conversions.h>
@@ -72,38 +75,28 @@ private:
     pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_filtered(
       new pcl::PointCloud<pcl::PointXYZ>);
 
-    // statistical outlier removal
-    pcl::StatisticalOutlierRemoval<pcl::PointXYZ> sor;
-    sor.setInputCloud(cloud_ptr);
-    sor.setMeanK(100);
-    sor.setStddevMulThresh(0.05);
-    sor.filter(*cloud_filtered);
-
+    cloud_filtered = cloud_ptr;
     // voxel grid filter
     pcl::VoxelGrid<pcl::PointXYZ> vg;
     vg.setInputCloud(cloud_filtered);
-    vg.setLeafSize(0.05f, 0.05f, 0.05f);
+    vg.setLeafSize(0.1f, 0.1f, 0.1f);
     vg.filter(*cloud_filtered);
+
+    // statistical outlier removal
+    // pcl::StatisticalOutlierRemoval<pcl::PointXYZ> sor;
+    // RCLCPP_INFO_STREAM(get_logger(), "original point cloud size: "
+    //                                    << cloud_filtered->points.size());
+    // sor.setInputCloud(cloud_filtered);
+    // sor.setMeanK(50);
+    // sor.setStddevMulThresh(0.01);
+    // sor.filter(*cloud_filtered);
+    // RCLCPP_INFO_STREAM(get_logger(), "filtered point cloud size: "
+    //                                    << cloud_filtered->points.size());
 
     // convex hull
     // pcl::ConvexHull<pcl::PointXYZ> chull;
     // chull.setInputCloud(cloud_filtered);
     // chull.reconstruct(*cloud_filtered);
-
-    // moving least square
-    // pcl::search::KdTree<pcl::PointXYZ>::Ptr tree(
-    //   new pcl::search::KdTree<pcl::PointXYZ>);
-    // pcl::MovingLeastSquares<pcl::PointXYZ, pcl::PointXYZ> mls;
-    // mls.setInputCloud(cloud_filtered);
-    // mls.setSearchMethod(tree);
-    // mls.setSearchRadius(0.03);
-    // // mls.setPolynomialOrder(2);
-    // mls.setUpsamplingMethod(
-    //   pcl::MovingLeastSquares<pcl::PointXYZ,
-    //                           pcl::PointXYZ>::RANDOM_UNIFORM_DENSITY);
-    // mls.setUpsamplingRadius(0.01);
-    // mls.setUpsamplingStepSize(0.005);
-    // mls.process(*cloud_filtered);
 
     // pcl::ConditionalRemoval<pcl::PointXYZ> condrem;
     // condrem.setInputCloud(cloud_filtered);
@@ -112,13 +105,101 @@ private:
     //   new pcl::ConditionAnd<pcl::PointXYZ>());
     //
     // condition->addComparison(pcl::FieldComparison<pcl::PointXYZ>::ConstPtr(
-    //   new pcl::FieldComparison<pcl::PointXYZ>("z", pcl::ComparisonOps::GT, z_threshold)));
+    //   new pcl::FieldComparison<pcl::PointXYZ>("z", pcl::ComparisonOps::GT,
+    //   z_threshold)));
     //
     // condrem.setCondition(condition);
     // condrem.setKeepOrganized(true);
     // condrem.filter(*cloud_filtered);
 
-    pcl::toROSMsg(*cloud_filtered, point_cloud2);
+    // pcl::VoxelGrid<pcl::PointXYZ> avg;
+    // avg.setInputCloud(cloud_ptr);
+    // avg.setLeafSize(0.25f, 0.25f, 0.25f);
+    // avg.filter(*cloud_filtered);
+    //
+    // //searchPoint
+    // pcl::PointXYZ searchPoint = cloud_filtered->at(0) ;
+    //
+    // //result from radiusSearch()
+    // std::vector<int> pointIdxRadiusSearch;
+    // std::vector<float> pointRadiusSquaredDistance;
+    //
+    // //kdTree
+    // pcl::KdTreeFLANN<pcl::PointXYZ> kdtree;
+    // kdtree.setInputCloud (cloud_filtered);
+    // kdtree.setSortedResults(true);
+    //
+    // if ( kdtree.radiusSearch (searchPoint, 100, pointIdxRadiusSearch,
+    // pointRadiusSquaredDistance) > 0 )
+    // {
+    //     //delete every point in target
+    //     for (size_t j = 0; j < pointIdxRadiusSearch.size (); ++j)
+    //     {
+    //         //is this the way to erase correctly???
+    //         //
+    //         cloud_out.push_back(cloudFiltered->points[pointIdxRadiusSearch[j]]);
+    //         cloud_filtered->erase(cloud_filtered->begin() +
+    //         pointIdxRadiusSearch[j]);
+    //     }
+    // }
+
+    pcl::search::KdTree<pcl::PointXYZ>::Ptr tree(
+      new pcl::search::KdTree<pcl::PointXYZ>);
+    tree->setInputCloud(cloud_filtered);
+
+    std::vector<pcl::PointIndices> cluster_indices;
+    pcl::EuclideanClusterExtraction<pcl::PointXYZ> ec;
+    ec.setClusterTolerance(0.1); // Adjust proximity threshold (in meters)
+    ec.setMinClusterSize(100);    // Minimum number of points in a cluster
+    ec.setMaxClusterSize(50000);  // Maximum number of points in a cluster
+    ec.setSearchMethod(tree);
+    ec.setInputCloud(cloud_filtered);
+    ec.extract(cluster_indices);
+
+    // Create a point cloud to hold the combined clusters
+    pcl::PointCloud<pcl::PointXYZ>::Ptr final_clusters(
+      new pcl::PointCloud<pcl::PointXYZ>);
+
+    for (const auto &cluster : cluster_indices) {
+      pcl::PointCloud<pcl::PointXYZ>::Ptr cluster_cloud(
+        new pcl::PointCloud<pcl::PointXYZ>);
+
+      for (const auto &idx : cluster.indices) {
+        cluster_cloud->points.push_back(cloud_filtered->points[idx]);
+      }
+
+      cluster_cloud->width = cluster_cloud->points.size();
+      cluster_cloud->height = 1;
+      cluster_cloud->is_dense = true;
+
+      // Optionally: you can analyze or process each cluster here (e.g., compute
+      // centroid)
+      // Eigen::Vector4f centroid;
+      // pcl::compute3DCentroid(*cluster_cloud, centroid);
+      // std::cout << "Cluster centroid: " << centroid.transpose() << std::endl;
+
+      // Combine each cluster into the final point cloud
+      *final_clusters += *cluster_cloud;
+
+    }
+    // moving least square
+    pcl::search::KdTree<pcl::PointXYZ>::Ptr tree2(
+      new pcl::search::KdTree<pcl::PointXYZ>);
+    pcl::MovingLeastSquares<pcl::PointXYZ, pcl::PointXYZ> mls;
+    mls.setInputCloud(final_clusters);
+    mls.setPolynomialOrder(2);
+    mls.setSearchMethod(tree2);
+    mls.setSearchRadius(0.1);
+    mls.setUpsamplingMethod(
+      pcl::MovingLeastSquares<pcl::PointXYZ,
+                              pcl::PointXYZ>::RANDOM_UNIFORM_DENSITY);
+    mls.setUpsamplingRadius(0.05);
+    mls.setUpsamplingStepSize(0.02);
+    pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_smoothed(
+      new pcl::PointCloud<pcl::PointXYZ>);
+    mls.process(*cloud_smoothed);
+
+    pcl::toROSMsg(*cloud_smoothed, point_cloud2);
   }
   void timer_callback()
   {
