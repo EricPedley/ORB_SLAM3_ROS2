@@ -3,7 +3,11 @@ from datetime import datetime
 
 from launch import LaunchDescription
 from launch_ros.actions import Node
-from launch.substitutions import LaunchConfiguration, PathJoinSubstitution, PythonExpression
+from launch.substitutions import (
+    LaunchConfiguration,
+    PathJoinSubstitution,
+    PythonExpression,
+)
 from launch_ros.substitutions import FindPackageShare
 from launch.conditions import IfCondition, UnlessCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
@@ -50,7 +54,7 @@ def generate_launch_description():
                 }.items(),
                 condition=IfCondition(
                     PythonExpression(
-                        ["'", LaunchConfiguration('playback_bag'), "' == 'changeme'"]
+                        ["'", LaunchConfiguration("playback_bag"), "' == 'changeme'"]
                     )
                 ),
             ),
@@ -62,14 +66,47 @@ def generate_launch_description():
                 parameters=[
                     {
                         "map_only": LaunchConfiguration("map_only"),
-                        "localization_mode": LaunchConfiguration(
-                            "localization_mode"
-                        ),
+                        "localization_mode": LaunchConfiguration("localization_mode"),
                         "sensor_type": LaunchConfiguration("sensor_type"),
                         "use_pangolin": LaunchConfiguration("use_pangolin"),
                         "use_live_feed": LaunchConfiguration("use_live_feed"),
                         "video_name": LaunchConfiguration("video_name"),
                     }
+                ],
+            ),
+            Node(
+                package="octomap_server",
+                executable="octomap_server_node",
+                output="screen",
+                parameters=[
+                    {
+                        "resolution": 0.05,
+                        "frame_id": "map",
+                        "sensor_model.max_range": 5.0,
+                        "filter_ground_plane": True,
+                    }
+                ],
+                remappings=[("/cloud_in", "orb_point_cloudu2")],
+            ),
+            Node(
+                package="tf2_ros",
+                executable="static_transform_publisher",
+                output="screen",
+                arguments=["0", "0", "0", "0", "0", "0", "world", "map"],
+            ),
+            Node(
+                package="rviz2",
+                executable="rviz2",
+                output="screen",
+                arguments=[
+                    "-d",
+                    PathJoinSubstitution(
+                        [
+                            FindPackageShare("orb_slam3_ros2"),
+                            "config",
+                            "point_cloud.rviz",
+                        ]
+                    ),
                 ],
             ),
             ExecuteProcess(
@@ -88,7 +125,7 @@ def generate_launch_description():
                 shell=True,
                 condition=IfCondition(
                     PythonExpression(
-                        ["'", LaunchConfiguration('playback_bag'), "' != 'changeme'"]
+                        ["'", LaunchConfiguration("playback_bag"), "' != 'changeme'"]
                     )
                 ),
             ),
@@ -111,7 +148,7 @@ def generate_launch_description():
                 shell=True,
                 condition=IfCondition(
                     PythonExpression(
-                        ["'", LaunchConfiguration('record_bag'), "' == 'true'"]
+                        ["'", LaunchConfiguration("record_bag"), "' == 'true'"]
                     )
                 ),
             ),

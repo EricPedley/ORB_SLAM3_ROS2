@@ -1,11 +1,17 @@
 #include <geometry_msgs/msg/quaternion.hpp>
 #include <geometry_msgs/msg/vector3.hpp>
 #include <opencv2/calib3d.hpp>
+#include <pcl/filters/statistical_outlier_removal.h>
+#include <pcl/filters/voxel_grid.h>
+#include <pcl_conversions/pcl_conversions.h>
+#include <rclcpp/callback_group.hpp>
 #include <rclcpp/logging.hpp>
+#include <rmw/qos_profiles.h>
 #include <sensor_msgs/msg/image.hpp>
 #include <sensor_msgs/msg/imu.hpp>
 #include <sensor_msgs/msg/point_cloud.hpp>
 #include <std_srvs/srv/empty.hpp>
+#include <tf2_ros/transform_broadcaster.h>
 
 #include <chrono>
 #include <fstream>
@@ -14,7 +20,11 @@
 #include <cv_bridge/cv_bridge.h>
 
 #include <opencv2/opencv.hpp>
-//
+
+#include <pcl/impl/point_types.hpp>
+#include <pcl/point_cloud.h>
+#include <pcl_ros/transforms.hpp>
+
 // this is orb_slam3
 #include "System.h"
 
@@ -28,7 +38,8 @@ public:
   ImuMonoRealSense()
     : Node("imu_mono_realsense"), capture_data(true),
       vocabulary_file_path(std::string(PROJECT_PATH) +
-                           "/ORB_SLAM3/Vocabulary/ORBvoc.txt")
+                           "/ORB_SLAM3/Vocabulary/ORBvoc.txt"),
+      count(0)
   {
 
     // declare parameters
@@ -53,17 +64,19 @@ public:
     load_map = get_parameter("load_map").as_string();
 
     // define callback groups
-    auto image_callback_group =
+    image_callback_group_ =
       create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
-    auto imu_callback_group =
+    imu_callback_group_ =
       create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
-    auto slam_service_callback_group =
+    slam_service_callback_group_ =
+      create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
+    timer_callback_group_ =
       create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
 
     rclcpp::SubscriptionOptions image_options;
-    image_options.callback_group = image_callback_group;
+    image_options.callback_group = image_callback_group_;
     rclcpp::SubscriptionOptions imu_options;
-    imu_options.callback_group = imu_callback_group;
+    imu_options.callback_group = imu_callback_group_;
 
     // set the sensor type based on parameter
     ORB_SLAM3::System::eSensor sensor_type;
@@ -83,59 +96,17 @@ public:
     RCLCPP_INFO_STREAM(get_logger(),
                        "vocabulary_file_path: " << vocabulary_file_path);
 
-    // // open the video and imu files, if required
-    // std::string imu_file_name = std::string(PROJECT_PATH) + "/videos/" +
-    //                             video_name.substr(0, video_name.length() - 4)
-    //                             +
-    //                             ".csv";
-    // if (use_live_feed) {
-    //   // dont open anything
-    //   input_video.open(0);
-    // } else {
-    //   // open the imu file
-    //   imu_file.open(imu_file_name);
-    //
-    //   // open the timestamp file
-    //   std::string timestamp_file_name =
-    //     std::string(PROJECT_PATH) + "/videos/" +
-    //     video_name.substr(0, video_name.length() - 4) + "_timestamps.csv";
-    //   video_timestamp_file.open(timestamp_file_name);
-    //
-    //   // open video file
-    //   input_video.open(std::string(PROJECT_PATH) + "/videos/" + video_name);
-    // }
-
-    // if (!input_video.isOpened() && !use_live_feed) {
-    //   RCLCPP_ERROR(get_logger(), "Could not open video file for reading");
-    // } else {
-    //   RCLCPP_INFO(get_logger(), "Opened video file for reading");
-    // }
-    //
-    // if (!imu_file.is_open() && !use_live_feed) {
-    //   RCLCPP_ERROR_STREAM(
-    //     get_logger(), "Could not open imu file for reading: " <<
-    //     imu_file_name);
-    // } else {
-    //   RCLCPP_INFO(get_logger(), "Opened imu file for reading");
-    // }
-
-    // video writer stuff
-    if (use_live_feed) {
-      video_name = generate_timestamp_string();
-    }
-    video_name = std::string(PROJECT_PATH) + "/videos/" + video_name;
-    output_video.open(
-      video_name, cv::VideoWriter::fourcc('m', 'p', '4', 'v'), 30,
-      cv::Size(1280, 720),
-      false); // codec: mp4v, frameRate: 30, resolution 1280x720, isColor: false
-
     // setup orb slam object
-    pAgent = std::make_shared<ORB_SLAM3::System>(
+    orb_slam3_system_ = std::make_shared<ORB_SLAM3::System>(
       vocabulary_file_path, settings_file_path, sensor_type, use_pangolin, 0);
 
     if (localization_mode) {
-      pAgent->ActivateLocalizationMode();
+      orb_slam3_system_->ActivateLocalizationMode();
     }
+
+    // create publishers
+    point_cloud2_publisher =
+      create_publisher<sensor_msgs::msg::PointCloud2>("orb_point_cloud2", 10);
 
     // create subscriptions
     rclcpp::QoS image_qos(rclcpp::KeepLast(10));
@@ -155,17 +126,14 @@ public:
     // create services
     slam_service = create_service<std_srvs::srv::Empty>(
       "slam_service",
-      std::bind(&ImuMonoRealSense::slam_service_callback, this, _1, _2));
-  }
+      std::bind(&ImuMonoRealSense::slam_service_callback, this, _1, _2),
+      rmw_qos_profile_services_default, slam_service_callback_group_);
 
-  // ~ImuMonoRealSense()
-  // {
-  //   if (use_live_feed) {
-  //     vector<ORB_SLAM3::MapPoint *> map_points = pAgent->GetTrackedMapPoints();
-  //     save_map_to_csv(map_points);
-  //     pAgent->Shutdown();
-  //   }
-  // }
+    // create timer
+    timer = create_wall_timer(
+      500ms, std::bind(&ImuMonoRealSense::timer_callback, this),
+      timer_callback_group_);
+  }
 
 private:
   std::string generate_timestamp_string()
@@ -234,75 +202,66 @@ private:
   void slam_service_callback(const std_srvs::srv::Empty::Request::SharedPtr,
                              const std_srvs::srv::Empty::Response::SharedPtr)
   {
-    pAgent->SavePCDBinary(std::string(PROJECT_PATH) + "/maps/");
+    orb_slam3_system_->SavePCDBinary(std::string(PROJECT_PATH) + "/maps/");
   }
 
   void image_callback(const sensor_msgs::msg::Image::SharedPtr msg)
   {
-    if (capture_data) {
+    output_video << get_image(msg); // write the frame to the output video
 
-      // cv::imshow("Normal Image", get_image(msg));
-      // cv::waitKey(1);
+    img_buf_.push(msg);
 
-      output_video << get_image(msg); // write the frame to the output video
+    // begin to empty the img_buf_ queue, which is full of other queues
+    while (!img_buf_.empty()) {
+      // grab the oldest image
+      auto imgPtr = img_buf_.front();
+      img_buf_.pop();
 
-      imgBuf_.push(msg);
+      cv::Mat imageFrame = get_image(imgPtr);
+      double tImage =
+        imgPtr->header.stamp.sec + imgPtr->header.stamp.nanosec * 1e-9;
 
-      if (use_live_feed) {
-        // begin to empty the imgBuf_ queue, which is full of other queues
-        while (!imgBuf_.empty()) {
-          // grab the oldest image
-          auto imgPtr = imgBuf_.front();
-          imgBuf_.pop();
+      vector<ORB_SLAM3::IMU::Point> vImuMeas;
 
-          cv::Mat imageFrame = get_image(imgPtr);
-          double tImage =
-            imgPtr->header.stamp.sec + imgPtr->header.stamp.nanosec * 1e-9;
+      // package all the imu data for this image for orbslam3 to process
+      buf_mutex_imu_.lock();
+      while (!imu_buf_.empty()) {
+        auto imuPtr = imu_buf_.front();
+        imu_buf_.pop();
+        double tIMU =
+          imuPtr->header.stamp.sec + imuPtr->header.stamp.nanosec * 1e-9;
 
-          vector<ORB_SLAM3::IMU::Point> vImuMeas;
+        cv::Point3f acc(imuPtr->linear_acceleration.x,
+                        imuPtr->linear_acceleration.y,
+                        imuPtr->linear_acceleration.z);
+        cv::Point3f gyr(imuPtr->angular_velocity.x, imuPtr->angular_velocity.y,
+                        imuPtr->angular_velocity.z);
+        vImuMeas.push_back(ORB_SLAM3::IMU::Point(acc, gyr, tIMU));
+      }
 
-          // package all the imu data for this image for orbslam3 to process
-          bufMutexImu_.lock();
-          while (!imuBuf_.empty()) {
-            auto imuPtr = imuBuf_.front();
-            imuBuf_.pop();
-            double tIMU =
-              imuPtr->header.stamp.sec + imuPtr->header.stamp.nanosec * 1e-9;
+      buf_mutex_imu_.unlock();
 
-            cv::Point3f acc(imuPtr->linear_acceleration.x,
-                            imuPtr->linear_acceleration.y,
-                            imuPtr->linear_acceleration.z);
-            cv::Point3f gyr(imuPtr->angular_velocity.x,
-                            imuPtr->angular_velocity.y,
-                            imuPtr->angular_velocity.z);
-            vImuMeas.push_back(ORB_SLAM3::IMU::Point(acc, gyr, tIMU));
-          }
+      if (vImuMeas.empty() && sensor_type_param == "imu-monocular") {
+        // RCLCPP_WARN(get_logger(),
+        //             "No valid IMU data available for the current frame "
+        //             "at time %.6f.",
+        //             tImage);
+        return;
+      }
 
-          bufMutexImu_.unlock();
-
-          if (vImuMeas.empty() && sensor_type_param == "imu-monocular") {
-            RCLCPP_WARN(get_logger(),
-                        "No valid IMU data available for the current frame "
-                        "at time %.6f.",
-                        tImage);
-            return;
-          }
-
-          try {
-            if (!map_only) {
-              if (sensor_type_param == "monocular") {
-                pAgent->TrackMonocular(imageFrame, tImage);
-              } else {
-                if(vImuMeas.size() > 1) {
-                  pAgent->TrackMonocular(imageFrame, tImage, vImuMeas);
-                }
-              }
+      try {
+        if (!map_only) {
+          if (sensor_type_param == "monocular") {
+            orb_slam3_system_->TrackMonocular(imageFrame, tImage);
+          } else {
+            if (vImuMeas.size() > 1) {
+              orb_slam3_system_->TrackMonocular(imageFrame, tImage, vImuMeas);
+              point_cloud2.header.stamp = rclcpp::Time(tImage);
             }
-          } catch (const std::exception &e) {
-            RCLCPP_ERROR(get_logger(), "SLAM processing exception: %s",
-                         e.what());
           }
         }
+      } catch (const std::exception &e) {
+        RCLCPP_ERROR(get_logger(), "SLAM processing exception: %s", e.what());
       }
     }
   }
@@ -310,7 +269,7 @@ private:
   void imu_callback(const sensor_msgs::msg::Imu &msg)
   {
     if (capture_data) {
-      bufMutexImu_.lock();
+      buf_mutex_imu_.lock();
       if (!std::isnan(msg.linear_acceleration.x) &&
           !std::isnan(msg.linear_acceleration.y) &&
           !std::isnan(msg.linear_acceleration.z) &&
@@ -319,17 +278,70 @@ private:
           !std::isnan(msg.angular_velocity.z)) {
         const sensor_msgs::msg::Imu::SharedPtr msg_ptr =
           std::make_shared<sensor_msgs::msg::Imu>(msg);
-        imuBuf_.push(msg_ptr);
+        imu_buf_.push(msg_ptr);
       } else {
         RCLCPP_ERROR(get_logger(), "Invalid IMU data - NaN");
       }
-      bufMutexImu_.unlock();
+      buf_mutex_imu_.unlock();
     }
+  }
+
+  void timer_callback()
+  {
+    // if (count < 10) {
+    //   count++;
+    //   return;
+    // }
+    unique_lock<mutex> lock(orbslam3_mutex_);
+    geometry_msgs::msg::TransformStamped t;
+    t.header.stamp = get_clock()->now();
+    t.header.frame_id = "map";
+    t.child_frame_id = "point_cloud";
+
+    t.transform.translation.z = 2;
+    tf_broadcaster->sendTransform(t);
+
+    pcl::PointCloud<pcl::PointXYZ> cloud = orb_slam3_system_->GetMapPCL();
+    RCLCPP_INFO_STREAM(get_logger(), "map points: " << cloud.points.size());
+
+    /// create objects for filtering the point cloud
+    pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_ptr(
+      new pcl::PointCloud<pcl::PointXYZ>(cloud));
+    pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_filtered(
+      new pcl::PointCloud<pcl::PointXYZ>);
+
+    // statistical outlier removal
+    pcl::StatisticalOutlierRemoval<pcl::PointXYZ> sor;
+    sor.setInputCloud(cloud_ptr);
+    sor.setMeanK(100);
+    sor.setStddevMulThresh(0.05);
+    sor.filter(*cloud_filtered);
+
+    // voxel grid filter
+    pcl::VoxelGrid<pcl::PointXYZ> vg;
+    vg.setInputCloud(cloud_filtered);
+    vg.setLeafSize(0.05f, 0.05f, 0.05f);
+    vg.filter(*cloud_filtered);
+
+    pcl::toROSMsg(cloud, point_cloud2);
+
+    point_cloud2.header.frame_id = "point_cloud";
+    point_cloud2_publisher->publish(point_cloud2);
   }
 
   rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr image_sub;
   rclcpp::Subscription<sensor_msgs::msg::Imu>::SharedPtr imu_sub;
+  rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr
+    point_cloud2_publisher;
   rclcpp::Service<std_srvs::srv::Empty>::SharedPtr slam_service;
+  rclcpp::TimerBase::SharedPtr timer;
+
+  rclcpp::CallbackGroup::SharedPtr image_callback_group_;
+  rclcpp::CallbackGroup::SharedPtr imu_callback_group_;
+  rclcpp::CallbackGroup::SharedPtr slam_service_callback_group_;
+  rclcpp::CallbackGroup::SharedPtr timer_callback_group_;
+
+  std::unique_ptr<tf2_ros::TransformBroadcaster> tf_broadcaster;
 
   sensor_msgs::msg::Imu imu_msg;
 
@@ -352,15 +364,19 @@ private:
   std::vector<geometry_msgs::msg::Vector3> vAccel;
   std::vector<double> vAccel_times;
 
-  queue<sensor_msgs::msg::Imu::SharedPtr> imuBuf_;
-  queue<sensor_msgs::msg::Image::SharedPtr> imgBuf_;
-  std::mutex bufMutexImu_, bufMutexImg_;
+  queue<sensor_msgs::msg::Imu::SharedPtr> imu_buf_;
+  queue<sensor_msgs::msg::Image::SharedPtr> img_buf_;
+  std::mutex buf_mutex_imu_, buf_mutex_img_, orbslam3_mutex_;
 
-  std::shared_ptr<ORB_SLAM3::System> pAgent;
+  std::shared_ptr<ORB_SLAM3::System> orb_slam3_system_;
   std::string vocabulary_file_path;
   std::string settings_file_path;
 
+  sensor_msgs::msg::PointCloud2 point_cloud2;
+
   std::shared_ptr<ORB_SLAM3::IMU::Point> initial_orientation;
+
+  int count;
 };
 
 int main(int argc, char *argv[])

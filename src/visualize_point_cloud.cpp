@@ -82,7 +82,7 @@ private:
     // voxel grid filter
     pcl::VoxelGrid<pcl::PointXYZ> vg;
     vg.setInputCloud(cloud_filtered);
-    vg.setLeafSize(0.03f, 0.03f, 0.03f);
+    vg.setLeafSize(0.05f, 0.05f, 0.05f);
     vg.filter(*cloud_filtered);
 
     // convex hull

@@ -1,5 +1,4 @@
 <launch>
-    <arg name="map_file_name" default="2024-05-05_01:44:37 PM_graham_apt_imu_map.csv"/>
     <arg name="pcl_file" default="changeme.pcd"/>
     <arg name="z_threshold" default="0.0"/>
     <node pkg="rviz2" exec="rviz2" args="-d $(find-pkg-share orb_slam3_ros2)/config/point_cloud.rviz"/>
@@ -11,7 +10,7 @@
     <node pkg="tf2_ros" exec="static_transform_publisher" args="--x 0 --y 0 --z 0 --yaw 0 --pitch 0 --roll 0 --frame-id world --child-frame-id map"/>
 
 	<node pkg="octomap_server" exec="octomap_server_node" name="octomap_server">
-		<param name="resolution" value="0.03" />
+		<param name="resolution" value="0.05" />
 
 		<!-- fixed map frame (set to 'map' if SLAM or localization running!) -->
 		<param name="frame_id" value="map" />
