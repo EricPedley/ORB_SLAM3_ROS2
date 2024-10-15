@@ -36,31 +36,19 @@ using std::placeholders::_1, std::placeholders::_2;
 class ImuMonoRealSense : public rclcpp::Node {
 public:
   ImuMonoRealSense()
-    : Node("imu_mono_realsense"), capture_data(true),
+    : Node("imu_mono_realsense"),
       vocabulary_file_path(std::string(PROJECT_PATH) +
                            "/ORB_SLAM3/Vocabulary/ORBvoc.txt")
   {
 
     // declare parameters
-    declare_parameter("map_only", false);
-    declare_parameter("localization_mode", false);
     declare_parameter("sensor_type", "imu-monocular");
     declare_parameter("use_pangolin", true);
-    declare_parameter("use_live_feed", true);
-    declare_parameter("video_name", "ChangeMe.mp4");
-    declare_parameter("save_map", false);
-    declare_parameter("load_map", "ChangeMe.osa");
 
     // get parameters
 
-    map_only = get_parameter("map_only").as_bool();
-    localization_mode = get_parameter("localization_mode").as_bool();
     sensor_type_param = get_parameter("sensor_type").as_string();
     bool use_pangolin = get_parameter("use_pangolin").as_bool();
-    use_live_feed = get_parameter("use_live_feed").as_bool();
-    video_name = get_parameter("video_name").as_string();
-    save_map = get_parameter("save_map").as_bool();
-    load_map = get_parameter("load_map").as_string();
 
     // define callback groups
     image_callback_group_ =
@@ -70,6 +58,10 @@ public:
     slam_service_callback_group_ =
       create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
     timer_callback_group_ =
+      create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
+    octomap_server_callback_group_ =
+      create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
+    octomap_timer_callback_group_ =
       create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
 
     rclcpp::SubscriptionOptions image_options;
@@ -99,10 +91,6 @@ public:
     orb_slam3_system_ = std::make_shared<ORB_SLAM3::System>(
       vocabulary_file_path, settings_file_path, sensor_type, use_pangolin, 0);
 
-    if (localization_mode) {
-      orb_slam3_system_->ActivateLocalizationMode();
-    }
-
     // create publishers
     point_cloud2_publisher =
       create_publisher<sensor_msgs::msg::PointCloud2>("orb_point_cloud2", 10);
@@ -128,6 +116,10 @@ public:
       std::bind(&ImuMonoRealSense::slam_service_callback, this, _1, _2),
       rmw_qos_profile_services_default, slam_service_callback_group_);
 
+    // create clients
+    octomap_server_client_ = create_client<std_srvs::srv::Empty>(
+      "octomap_server/reset", rmw_qos_profile_services_default, octomap_server_callback_group_);
+
     // tf broadcaster
     tf_broadcaster = std::make_unique<tf2_ros::TransformBroadcaster>(*this);
 
@@ -135,6 +127,9 @@ public:
     timer = create_wall_timer(
       500ms, std::bind(&ImuMonoRealSense::timer_callback, this),
       timer_callback_group_);
+    octomap_timer_ = create_wall_timer(
+      10000ms, std::bind(&ImuMonoRealSense::octomap_timer_callback, this),
+      octomap_timer_callback_group_);
   }
 
 private:
@@ -148,39 +143,6 @@ private:
     oss << std::put_time(ptm, "%Y-%m-%d_%H-%M-%S") << ".mp4";
 
     return oss.str();
-  }
-
-  void save_map_to_csv(vector<ORB_SLAM3::MapPoint *> map_points)
-  {
-    std::ofstream map_file;
-    // add date and time to the map file name
-    std::string time_string;
-    if (use_live_feed) {
-      std::time_t now =
-        std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
-      time_string = std::ctime(&now);
-      time_string = time_string.substr(0, time_string.length() - 1) + "_";
-    }
-    std::string map_file_name = std::string(PROJECT_PATH) + "/maps/" +
-                                video_name.substr(0, video_name.length() - 4) +
-                                "_" + time_string + "map" + ".csv";
-    map_file.open(map_file_name);
-    if (map_file.is_open()) {
-      // map_file << initial_orientation->a[0] << "," <<
-      // initial_orientation->a[1]
-      //   << "," << initial_orientation->a[2] << "," <<
-      //   initial_orientation->w[0]
-      //   << "," << initial_orientation->w[1] << "," <<
-      //   initial_orientation->w[2]
-      //   << std::endl;
-      for (auto &map_point : map_points) {
-        Eigen::Vector3f pos = map_point->GetWorldPos();
-        map_file << pos[0] << "," << pos[1] << "," << pos[2] << std::endl;
-      }
-      map_file.close();
-    } else {
-      RCLCPP_ERROR(get_logger(), "Could not open map file for writing");
-    }
   }
 
   cv::Mat get_image(const sensor_msgs::msg::Image::SharedPtr msg)
@@ -252,14 +214,12 @@ private:
       }
 
       try {
-        if (!map_only) {
-          if (sensor_type_param == "monocular") {
-            orb_slam3_system_->TrackMonocular(imageFrame, tImage);
-          } else {
-            if (vImuMeas.size() > 1) {
-              orb_slam3_system_->TrackMonocular(imageFrame, tImage, vImuMeas);
-              point_cloud2.header.stamp = rclcpp::Time(tImage);
-            }
+        if (sensor_type_param == "monocular") {
+          orb_slam3_system_->TrackMonocular(imageFrame, tImage);
+        } else {
+          if (vImuMeas.size() > 1) {
+            orb_slam3_system_->TrackMonocular(imageFrame, tImage, vImuMeas);
+            point_cloud2.header.stamp = rclcpp::Time(tImage);
           }
         }
       } catch (const std::exception &e) {
@@ -270,22 +230,20 @@ private:
 
   void imu_callback(const sensor_msgs::msg::Imu &msg)
   {
-    if (capture_data) {
-      buf_mutex_imu_.lock();
-      if (!std::isnan(msg.linear_acceleration.x) &&
-          !std::isnan(msg.linear_acceleration.y) &&
-          !std::isnan(msg.linear_acceleration.z) &&
-          !std::isnan(msg.angular_velocity.x) &&
-          !std::isnan(msg.angular_velocity.y) &&
-          !std::isnan(msg.angular_velocity.z)) {
-        const sensor_msgs::msg::Imu::SharedPtr msg_ptr =
-          std::make_shared<sensor_msgs::msg::Imu>(msg);
-        imu_buf_.push(msg_ptr);
-      } else {
-        RCLCPP_ERROR(get_logger(), "Invalid IMU data - NaN");
-      }
-      buf_mutex_imu_.unlock();
+    buf_mutex_imu_.lock();
+    if (!std::isnan(msg.linear_acceleration.x) &&
+        !std::isnan(msg.linear_acceleration.y) &&
+        !std::isnan(msg.linear_acceleration.z) &&
+        !std::isnan(msg.angular_velocity.x) &&
+        !std::isnan(msg.angular_velocity.y) &&
+        !std::isnan(msg.angular_velocity.z)) {
+      const sensor_msgs::msg::Imu::SharedPtr msg_ptr =
+        std::make_shared<sensor_msgs::msg::Imu>(msg);
+      imu_buf_.push(msg_ptr);
+    } else {
+      RCLCPP_ERROR(get_logger(), "Invalid IMU data - NaN");
     }
+    buf_mutex_imu_.unlock();
   }
 
   void timer_callback()
@@ -326,29 +284,32 @@ private:
     point_cloud2_publisher->publish(point_cloud2);
   }
 
+  void octomap_timer_callback()
+  {
+    octomap_server_client_->async_send_request(
+      std::make_shared<std_srvs::srv::Empty::Request>());
+  }
+
   rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr image_sub;
   rclcpp::Subscription<sensor_msgs::msg::Imu>::SharedPtr imu_sub;
   rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr
     point_cloud2_publisher;
   rclcpp::Service<std_srvs::srv::Empty>::SharedPtr slam_service;
+  rclcpp::Client<std_srvs::srv::Empty>::SharedPtr octomap_server_client_;
   rclcpp::TimerBase::SharedPtr timer;
+  rclcpp::TimerBase::SharedPtr octomap_timer_;
 
   rclcpp::CallbackGroup::SharedPtr image_callback_group_;
   rclcpp::CallbackGroup::SharedPtr imu_callback_group_;
   rclcpp::CallbackGroup::SharedPtr slam_service_callback_group_;
+  rclcpp::CallbackGroup::SharedPtr octomap_server_callback_group_;
   rclcpp::CallbackGroup::SharedPtr timer_callback_group_;
+  rclcpp::CallbackGroup::SharedPtr octomap_timer_callback_group_;
 
   std::unique_ptr<tf2_ros::TransformBroadcaster> tf_broadcaster;
 
   sensor_msgs::msg::Imu imu_msg;
 
-  bool map_only;
-  bool use_live_feed;
-  bool localization_mode;
-  bool capture_data;
-  bool save_map;
-  std::string load_map;
-  std::string video_name;
   std::string sensor_type_param;
 
   cv::VideoCapture input_video;
@@ -373,6 +334,7 @@ private:
 
   std::shared_ptr<ORB_SLAM3::IMU::Point> initial_orientation;
 
+  bool imu_initialized = false;
 };
 
 int main(int argc, char *argv[])

@@ -23,14 +23,8 @@ def generate_launch_description():
     bag_name = f"ORB_SLAM3_{current_time}"
     return LaunchDescription(
         [
-            DeclareLaunchArgument("save_map", default_value="false"),
-            DeclareLaunchArgument("load_map", default_value="false"),
-            DeclareLaunchArgument("map_only", default_value="false"),
-            DeclareLaunchArgument("localization_mode", default_value="false"),
             DeclareLaunchArgument("sensor_type", default_value="imu-monocular"),
             DeclareLaunchArgument("use_pangolin", default_value="true"),
-            DeclareLaunchArgument("use_live_feed", default_value="true"),
-            DeclareLaunchArgument("video_name", default_value="default.mp4"),
             DeclareLaunchArgument("playback_bag", default_value="changeme"),
             DeclareLaunchArgument("record_bag", default_value="false"),
             DeclareLaunchArgument("bag_name", default_value=bag_name),
@@ -65,12 +59,8 @@ def generate_launch_description():
                 # prefix="xterm -e gdb --args",
                 parameters=[
                     {
-                        "map_only": LaunchConfiguration("map_only"),
-                        "localization_mode": LaunchConfiguration("localization_mode"),
                         "sensor_type": LaunchConfiguration("sensor_type"),
                         "use_pangolin": LaunchConfiguration("use_pangolin"),
-                        "use_live_feed": LaunchConfiguration("use_live_feed"),
-                        "video_name": LaunchConfiguration("video_name"),
                     }
                 ],
             ),
