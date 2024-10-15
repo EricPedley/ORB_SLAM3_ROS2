@@ -10,7 +10,6 @@
 #include <geometry_msgs/msg/point32.hpp>
 #include <geometry_msgs/msg/quaternion.hpp>
 #include <rclcpp/rclcpp.hpp>
-#include <sensor_msgs/msg/point_cloud.hpp>
 #include <sensor_msgs/msg/point_cloud2.hpp>
 #include <sensor_msgs/msg/point_field.hpp>
 #include <std_msgs/msg/string.hpp>
@@ -36,21 +35,12 @@ public:
   VisualizePointCloud() : Node("visualize_point_cloud")
   {
     // declare parameters
-    declare_parameter("map_file_name",
-                      "2024-05-05_01:44:37 PM_graham_apt_imu_map.csv");
     declare_parameter("pcl_file", "changeme.pcd");
     declare_parameter("z_threshold", 0.1);
-    std::string file_name = get_parameter("map_file_name").as_string();
     pcl_file = get_parameter("pcl_file").as_string();
     z_threshold = get_parameter("z_threshold").as_double();
 
-    map_file_path =
-      static_cast<std::string>(PROJECT_PATH) + "/maps/" + file_name;
-
     // create publishers
-    // point_cloud_publisher =
-    // create_publisher<sensor_msgs::msg::PointCloud>("orb_point_cloud", 10);
-
     point_cloud2_publisher =
       create_publisher<sensor_msgs::msg::PointCloud2>("orb_point_cloud2", 10);
 
@@ -86,14 +76,14 @@ private:
     pcl::StatisticalOutlierRemoval<pcl::PointXYZ> sor;
     sor.setInputCloud(cloud_ptr);
     sor.setMeanK(100);
-    sor.setStddevMulThresh(0.5);
+    sor.setStddevMulThresh(0.05);
     sor.filter(*cloud_filtered);
 
     // voxel grid filter
-    // pcl::VoxelGrid<pcl::PointXYZ> vg;
-    // vg.setInputCloud(cloud_ptr);
-    // vg.setLeafSize(0.05f, 0.05f, 0.05f);
-    // vg.filter(*cloud_filtered);
+    pcl::VoxelGrid<pcl::PointXYZ> vg;
+    vg.setInputCloud(cloud_filtered);
+    vg.setLeafSize(0.03f, 0.03f, 0.03f);
+    vg.filter(*cloud_filtered);
 
     // convex hull
     // pcl::ConvexHull<pcl::PointXYZ> chull;
@@ -101,29 +91,32 @@ private:
     // chull.reconstruct(*cloud_filtered);
 
     // moving least square
+    // pcl::search::KdTree<pcl::PointXYZ>::Ptr tree(
+    //   new pcl::search::KdTree<pcl::PointXYZ>);
     // pcl::MovingLeastSquares<pcl::PointXYZ, pcl::PointXYZ> mls;
-    // mls.setInputCloud(cloud_ptr);
+    // mls.setInputCloud(cloud_filtered);
+    // mls.setSearchMethod(tree);
     // mls.setSearchRadius(0.03);
-    // mls.setPolynomialOrder(2);
+    // // mls.setPolynomialOrder(2);
     // mls.setUpsamplingMethod(
     //   pcl::MovingLeastSquares<pcl::PointXYZ,
-    //                           pcl::PointXYZ>::SAMPLE_LOCAL_PLANE);
-    // mls.setUpsamplingRadius(0.025);
-    // mls.setUpsamplingStepSize(0.015);
+    //                           pcl::PointXYZ>::RANDOM_UNIFORM_DENSITY);
+    // mls.setUpsamplingRadius(0.01);
+    // mls.setUpsamplingStepSize(0.005);
     // mls.process(*cloud_filtered);
 
-    pcl::ConditionalRemoval<pcl::PointXYZ> condrem;
-    condrem.setInputCloud(cloud_filtered);
-
-    pcl::ConditionAnd<pcl::PointXYZ>::Ptr condition(
-      new pcl::ConditionAnd<pcl::PointXYZ>());
-
-    condition->addComparison(pcl::FieldComparison<pcl::PointXYZ>::ConstPtr(
-      new pcl::FieldComparison<pcl::PointXYZ>("z", pcl::ComparisonOps::GT, z_threshold)));
-
-    condrem.setCondition(condition);
-    condrem.setKeepOrganized(true);
-    condrem.filter(*cloud_filtered);
+    // pcl::ConditionalRemoval<pcl::PointXYZ> condrem;
+    // condrem.setInputCloud(cloud_filtered);
+    //
+    // pcl::ConditionAnd<pcl::PointXYZ>::Ptr condition(
+    //   new pcl::ConditionAnd<pcl::PointXYZ>());
+    //
+    // condition->addComparison(pcl::FieldComparison<pcl::PointXYZ>::ConstPtr(
+    //   new pcl::FieldComparison<pcl::PointXYZ>("z", pcl::ComparisonOps::GT, z_threshold)));
+    //
+    // condrem.setCondition(condition);
+    // condrem.setKeepOrganized(true);
+    // condrem.filter(*cloud_filtered);
 
     pcl::toROSMsg(*cloud_filtered, point_cloud2);
     point_cloud2.header.frame_id = "point_cloud";
@@ -138,26 +131,20 @@ private:
     t.transform.translation.z = 2;
     tf_broadcaster->sendTransform(t);
 
-    // point_cloud.header.stamp = get_clock()->now();
     point_cloud2.header.stamp = get_clock()->now();
-    // point_cloud_publisher->publish(point_cloud);
     point_cloud2_publisher->publish(point_cloud2);
   }
   rclcpp::TimerBase::SharedPtr timer;
-  rclcpp::Publisher<sensor_msgs::msg::PointCloud>::SharedPtr
-    point_cloud_publisher;
   rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr
     point_cloud2_publisher;
   rclcpp::Subscription<nav_msgs::msg::OccupancyGrid>::SharedPtr
     occupancy_grid_sub;
 
-  sensor_msgs::msg::PointCloud point_cloud;
   sensor_msgs::msg::PointCloud2 point_cloud2;
 
   tf2::Quaternion initial_orientation;
   std::unique_ptr<tf2_ros::TransformBroadcaster> tf_broadcaster;
 
-  std::string map_file_path;
   std::string pcl_file;
   double z_threshold;
 };

@@ -11,7 +11,7 @@
     <node pkg="tf2_ros" exec="static_transform_publisher" args="--x 0 --y 0 --z 0 --yaw 0 --pitch 0 --roll 0 --frame-id world --child-frame-id map"/>
 
 	<node pkg="octomap_server" exec="octomap_server_node" name="octomap_server">
-		<param name="resolution" value="0.01" />
+		<param name="resolution" value="0.03" />
 
 		<!-- fixed map frame (set to 'map' if SLAM or localization running!) -->
 		<param name="frame_id" value="map" />
@@ -19,7 +19,7 @@
 		<!-- maximum range to integrate (speedup!) -->
 		<param name="sensor_model.max_range" value="5.0" />
 
-        <param name="filter_ground" value="true" />
+        <param name="filter_ground_plane" value="true" />
 
 		<!-- data source to integrate (PointCloud2) -->
 		<remap from="cloud_in" to="orb_point_cloud2" />
