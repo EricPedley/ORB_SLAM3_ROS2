@@ -23,11 +23,31 @@ def generate_launch_description():
     bag_name = f"ORB_SLAM3_{current_time}"
     return LaunchDescription(
         [
-            DeclareLaunchArgument("sensor_type", default_value="imu-monocular"),
-            DeclareLaunchArgument("use_pangolin", default_value="true"),
-            DeclareLaunchArgument("playback_bag", default_value="changeme"),
-            DeclareLaunchArgument("record_bag", default_value="false"),
-            DeclareLaunchArgument("bag_name", default_value=bag_name),
+            DeclareLaunchArgument(
+                "sensor_type",
+                default_value="imu-monocular",
+                description="The mode which ORB_SLAM3 will run in.",
+            ),
+            DeclareLaunchArgument(
+                "use_pangolin",
+                default_value="true",
+                description="Whether to use Pangolin for visualization.",
+            ),
+            DeclareLaunchArgument(
+                "playback_bag",
+                default_value="changeme",
+                description="The rosbag to play during execution. If set, the realsense2_camera node will not launch. Otherwise, nothing will happen.",
+            ),
+            DeclareLaunchArgument(
+                "record_bag",
+                default_value="false",
+                description="Whether or not to record a rosbag.",
+            ),
+            DeclareLaunchArgument(
+                "bag_name",
+                default_value=bag_name,
+                description="The name of the bag if record_bag is true. By default, the name of the bag will be ORB_SLAM3_YYYY-MM-DD_HH-mm-ss",
+            ),
             IncludeLaunchDescription(
                 PythonLaunchDescriptionSource(
                     PathJoinSubstitution(
