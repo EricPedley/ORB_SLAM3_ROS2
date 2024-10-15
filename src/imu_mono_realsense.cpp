@@ -38,8 +38,7 @@ public:
   ImuMonoRealSense()
     : Node("imu_mono_realsense"), capture_data(true),
       vocabulary_file_path(std::string(PROJECT_PATH) +
-                           "/ORB_SLAM3/Vocabulary/ORBvoc.txt"),
-      count(0)
+                           "/ORB_SLAM3/Vocabulary/ORBvoc.txt")
   {
 
     // declare parameters
@@ -128,6 +127,9 @@ public:
       "slam_service",
       std::bind(&ImuMonoRealSense::slam_service_callback, this, _1, _2),
       rmw_qos_profile_services_default, slam_service_callback_group_);
+
+    // tf broadcaster
+    tf_broadcaster = std::make_unique<tf2_ros::TransformBroadcaster>(*this);
 
     // create timer
     timer = create_wall_timer(
@@ -288,10 +290,6 @@ private:
 
   void timer_callback()
   {
-    // if (count < 10) {
-    //   count++;
-    //   return;
-    // }
     unique_lock<mutex> lock(orbslam3_mutex_);
     geometry_msgs::msg::TransformStamped t;
     t.header.stamp = get_clock()->now();
@@ -302,7 +300,6 @@ private:
     tf_broadcaster->sendTransform(t);
 
     pcl::PointCloud<pcl::PointXYZ> cloud = orb_slam3_system_->GetMapPCL();
-    RCLCPP_INFO_STREAM(get_logger(), "map points: " << cloud.points.size());
 
     /// create objects for filtering the point cloud
     pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_ptr(
@@ -323,7 +320,7 @@ private:
     vg.setLeafSize(0.05f, 0.05f, 0.05f);
     vg.filter(*cloud_filtered);
 
-    pcl::toROSMsg(cloud, point_cloud2);
+    pcl::toROSMsg(*cloud_filtered, point_cloud2);
 
     point_cloud2.header.frame_id = "point_cloud";
     point_cloud2_publisher->publish(point_cloud2);
@@ -376,7 +373,6 @@ private:
 
   std::shared_ptr<ORB_SLAM3::IMU::Point> initial_orientation;
 
-  int count;
 };
 
 int main(int argc, char *argv[])

@@ -119,7 +119,6 @@ private:
     // condrem.filter(*cloud_filtered);
 
     pcl::toROSMsg(*cloud_filtered, point_cloud2);
-    point_cloud2.header.frame_id = "point_cloud";
   }
   void timer_callback()
   {
@@ -132,6 +131,7 @@ private:
     tf_broadcaster->sendTransform(t);
 
     point_cloud2.header.stamp = get_clock()->now();
+    point_cloud2.header.frame_id = "point_cloud";
     point_cloud2_publisher->publish(point_cloud2);
   }
   rclcpp::TimerBase::SharedPtr timer;

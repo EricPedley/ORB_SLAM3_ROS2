@@ -83,10 +83,10 @@ def generate_launch_description():
                         "resolution": 0.05,
                         "frame_id": "map",
                         "sensor_model.max_range": 5.0,
-                        "filter_ground_plane": True,
+                        # "filter_ground_plane": True,
                     }
                 ],
-                remappings=[("/cloud_in", "orb_point_cloudu2")],
+                remappings=[("cloud_in", "orb_point_cloud2")],
             ),
             Node(
                 package="tf2_ros",
