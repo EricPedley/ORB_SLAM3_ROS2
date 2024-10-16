@@ -259,26 +259,7 @@ private:
 
     pcl::PointCloud<pcl::PointXYZ> cloud = orb_slam3_system_->GetMapPCL();
 
-    /// create objects for filtering the point cloud
-    pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_ptr(
-      new pcl::PointCloud<pcl::PointXYZ>(cloud));
-    pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_filtered(
-      new pcl::PointCloud<pcl::PointXYZ>);
-
-    // statistical outlier removal
-    pcl::StatisticalOutlierRemoval<pcl::PointXYZ> sor;
-    sor.setInputCloud(cloud_ptr);
-    sor.setMeanK(100);
-    sor.setStddevMulThresh(0.05);
-    sor.filter(*cloud_filtered);
-
-    // voxel grid filter
-    pcl::VoxelGrid<pcl::PointXYZ> vg;
-    vg.setInputCloud(cloud_filtered);
-    vg.setLeafSize(0.05f, 0.05f, 0.05f);
-    vg.filter(*cloud_filtered);
-
-    pcl::toROSMsg(*cloud_filtered, point_cloud2);
+    pcl::toROSMsg(cloud, point_cloud2);
 
     point_cloud2.header.frame_id = "point_cloud";
     point_cloud2_publisher->publish(point_cloud2);

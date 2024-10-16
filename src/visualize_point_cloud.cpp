@@ -79,7 +79,7 @@ private:
     // voxel grid filter
     pcl::VoxelGrid<pcl::PointXYZ> vg;
     vg.setInputCloud(cloud_filtered);
-    vg.setLeafSize(0.1f, 0.1f, 0.1f);
+    vg.setLeafSize(0.1f, 0.1f, 0.0f);
     vg.filter(*cloud_filtered);
 
     // statistical outlier removal
