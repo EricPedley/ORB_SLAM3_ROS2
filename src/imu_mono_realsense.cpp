@@ -132,6 +132,11 @@ public:
       octomap_timer_callback_group_);
   }
 
+  ~ImuMonoRealSense()
+  {
+    orb_slam3_system_->SavePCDBinary(std::string(PROJECT_PATH) + "/maps/");
+  }
+
 private:
   std::string generate_timestamp_string()
   {
@@ -220,6 +225,8 @@ private:
           if (vImuMeas.size() > 1) {
             orb_slam3_system_->TrackMonocular(imageFrame, tImage, vImuMeas);
             point_cloud2.header.stamp = rclcpp::Time(tImage);
+            cv::imshow("test", imageFrame);
+            cv::waitKey(1);
           }
         }
       } catch (const std::exception &e) {

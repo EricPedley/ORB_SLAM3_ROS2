@@ -92,7 +92,7 @@ def generate_launch_description():
                     {
                         "resolution": 0.05,
                         "frame_id": "map",
-                        "sensor_model.max_range": 5.0,
+                        "sensor_model.max_range": 100.0,
                         # "filter_ground_plane": True,
                     }
                 ],

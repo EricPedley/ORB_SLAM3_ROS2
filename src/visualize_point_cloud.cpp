@@ -72,26 +72,24 @@ private:
     // now i can filter the pointcloud
     pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_ptr =
       std::make_shared<pcl::PointCloud<pcl::PointXYZ>>(pcl_cloud);
-    pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_filtered(
-      new pcl::PointCloud<pcl::PointXYZ>);
 
-    cloud_filtered = cloud_ptr;
     // voxel grid filter
+    pcl::PointCloud<pcl::PointXYZ>::Ptr voxel_cloud(
+        new pcl::PointCloud<pcl::PointXYZ>);
     pcl::VoxelGrid<pcl::PointXYZ> vg;
-    vg.setInputCloud(cloud_filtered);
-    vg.setLeafSize(0.1f, 0.1f, 0.0f);
-    vg.filter(*cloud_filtered);
+    vg.setInputCloud(cloud_ptr);
+    vg.setLeafSize(0.05f, 0.05f, 0.05f);
+    vg.filter(*voxel_cloud);
 
     // statistical outlier removal
-    // pcl::StatisticalOutlierRemoval<pcl::PointXYZ> sor;
-    // RCLCPP_INFO_STREAM(get_logger(), "original point cloud size: "
-    //                                    << cloud_filtered->points.size());
-    // sor.setInputCloud(cloud_filtered);
-    // sor.setMeanK(50);
-    // sor.setStddevMulThresh(0.01);
-    // sor.filter(*cloud_filtered);
-    // RCLCPP_INFO_STREAM(get_logger(), "filtered point cloud size: "
-    //                                    << cloud_filtered->points.size());
+
+    pcl::PointCloud<pcl::PointXYZ>::Ptr sor_cloud(
+      new pcl::PointCloud<pcl::PointXYZ>);
+    pcl::StatisticalOutlierRemoval<pcl::PointXYZ> sor;
+    sor.setInputCloud(voxel_cloud);
+    sor.setMeanK(100);
+    sor.setStddevMulThresh(0.1);
+    sor.filter(*sor_cloud);
 
     // convex hull
     // pcl::ConvexHull<pcl::PointXYZ> chull;
@@ -143,63 +141,63 @@ private:
     //     }
     // }
 
-    pcl::search::KdTree<pcl::PointXYZ>::Ptr tree(
-      new pcl::search::KdTree<pcl::PointXYZ>);
-    tree->setInputCloud(cloud_filtered);
-
-    std::vector<pcl::PointIndices> cluster_indices;
-    pcl::EuclideanClusterExtraction<pcl::PointXYZ> ec;
-    ec.setClusterTolerance(0.1); // Adjust proximity threshold (in meters)
-    ec.setMinClusterSize(100);    // Minimum number of points in a cluster
-    ec.setMaxClusterSize(50000);  // Maximum number of points in a cluster
-    ec.setSearchMethod(tree);
-    ec.setInputCloud(cloud_filtered);
-    ec.extract(cluster_indices);
-
-    // Create a point cloud to hold the combined clusters
-    pcl::PointCloud<pcl::PointXYZ>::Ptr final_clusters(
-      new pcl::PointCloud<pcl::PointXYZ>);
-
-    for (const auto &cluster : cluster_indices) {
-      pcl::PointCloud<pcl::PointXYZ>::Ptr cluster_cloud(
-        new pcl::PointCloud<pcl::PointXYZ>);
-
-      for (const auto &idx : cluster.indices) {
-        cluster_cloud->points.push_back(cloud_filtered->points[idx]);
-      }
-
-      cluster_cloud->width = cluster_cloud->points.size();
-      cluster_cloud->height = 1;
-      cluster_cloud->is_dense = true;
-
-      // Optionally: you can analyze or process each cluster here (e.g., compute
-      // centroid)
-      // Eigen::Vector4f centroid;
-      // pcl::compute3DCentroid(*cluster_cloud, centroid);
-      // std::cout << "Cluster centroid: " << centroid.transpose() << std::endl;
-
-      // Combine each cluster into the final point cloud
-      *final_clusters += *cluster_cloud;
-
-    }
+    // pcl::search::KdTree<pcl::PointXYZ>::Ptr tree(
+    //   new pcl::search::KdTree<pcl::PointXYZ>);
+    // tree->setInputCloud(sor_cloud);
+    //
+    // std::vector<pcl::PointIndices> cluster_indices;
+    // pcl::EuclideanClusterExtraction<pcl::PointXYZ> ec;
+    // ec.setClusterTolerance(0.1); // Adjust proximity threshold (in meters)
+    // ec.setMinClusterSize(100);    // Minimum number of points in a cluster
+    // ec.setMaxClusterSize(50000);  // Maximum number of points in a cluster
+    // ec.setSearchMethod(tree);
+    // ec.setInputCloud(sor_cloud);
+    // ec.extract(cluster_indices);
+    //
+    // // Create a point cloud to hold the combined clusters
+    // pcl::PointCloud<pcl::PointXYZ>::Ptr final_clusters(
+    //   new pcl::PointCloud<pcl::PointXYZ>);
+    //
+    // for (const auto &cluster : cluster_indices) {
+    //   pcl::PointCloud<pcl::PointXYZ>::Ptr cluster_cloud(
+    //     new pcl::PointCloud<pcl::PointXYZ>);
+    //
+    //   for (const auto &idx : cluster.indices) {
+    //     cluster_cloud->points.push_back(sor_cloud->points[idx]);
+    //   }
+    //
+    //   cluster_cloud->width = cluster_cloud->points.size();
+    //   cluster_cloud->height = 1;
+    //   cluster_cloud->is_dense = true;
+    //
+    //   // Optionally: you can analyze or process each cluster here (e.g., compute
+    //   // centroid)
+    //   // Eigen::Vector4f centroid;
+    //   // pcl::compute3DCentroid(*cluster_cloud, centroid);
+    //   // std::cout << "Cluster centroid: " << centroid.transpose() << std::endl;
+    //
+    //   // Combine each cluster into the final point cloud
+    //   *final_clusters += *cluster_cloud;
+    //
+    // }
     // moving least square
-    pcl::search::KdTree<pcl::PointXYZ>::Ptr tree2(
-      new pcl::search::KdTree<pcl::PointXYZ>);
-    pcl::MovingLeastSquares<pcl::PointXYZ, pcl::PointXYZ> mls;
-    mls.setInputCloud(final_clusters);
-    mls.setPolynomialOrder(2);
-    mls.setSearchMethod(tree2);
-    mls.setSearchRadius(0.1);
-    mls.setUpsamplingMethod(
-      pcl::MovingLeastSquares<pcl::PointXYZ,
-                              pcl::PointXYZ>::RANDOM_UNIFORM_DENSITY);
-    mls.setUpsamplingRadius(0.05);
-    mls.setUpsamplingStepSize(0.02);
-    pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_smoothed(
-      new pcl::PointCloud<pcl::PointXYZ>);
-    mls.process(*cloud_smoothed);
+    // pcl::search::KdTree<pcl::PointXYZ>::Ptr tree2(
+    //   new pcl::search::KdTree<pcl::PointXYZ>);
+    // pcl::MovingLeastSquares<pcl::PointXYZ, pcl::PointXYZ> mls;
+    // mls.setInputCloud(cloud_filtered);
+    // mls.setPolynomialOrder(2);
+    // mls.setSearchMethod(tree2);
+    // mls.setSearchRadius(0.1);
+    // mls.setUpsamplingMethod(
+    //   pcl::MovingLeastSquares<pcl::PointXYZ,
+    //                           pcl::PointXYZ>::RANDOM_UNIFORM_DENSITY);
+    // mls.setUpsamplingRadius(0.05);
+    // mls.setUpsamplingStepSize(0.02);
+    // pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_smoothed(
+    //   new pcl::PointCloud<pcl::PointXYZ>);
+    // mls.process(*cloud_smoothed);
 
-    pcl::toROSMsg(*cloud_smoothed, point_cloud2);
+    pcl::toROSMsg(*sor_cloud, point_cloud2);
   }
   void timer_callback()
   {
