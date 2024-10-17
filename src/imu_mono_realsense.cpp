@@ -94,8 +94,10 @@ public:
       vocabulary_file_path, settings_file_path, sensor_type, use_pangolin, 0);
 
     // create publishers
-    point_cloud2_publisher =
+    point_cloud2_publisher_ =
       create_publisher<sensor_msgs::msg::PointCloud2>("orb_point_cloud2", 10);
+    tracked_point_cloud2_publisher_ =
+      create_publisher<sensor_msgs::msg::PointCloud2>("tracked_point_cloud2", 10);
     laser_scan_publisher_ =
       create_publisher<sensor_msgs::msg::LaserScan>("scan", 10);
     pose_array_publisher_ =
@@ -143,9 +145,9 @@ public:
     laser_scan_->header.frame_id = "point_cloud";
     laser_scan_->angle_min = -M_PI / 2;
     laser_scan_->angle_max = M_PI / 2;
-    laser_scan_->angle_increment = M_PI / 180;
-    laser_scan_->range_min = 0.1;
-    laser_scan_->range_max = 20.0;
+    laser_scan_->angle_increment = M_PI / 720;
+    laser_scan_->range_min = 0.01;
+    laser_scan_->range_max = 100.0;
 
     pose_array_.header.frame_id = "point_cloud";
   }
@@ -190,10 +192,10 @@ private:
   point_cloud_to_laser_scan(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud,
                             sensor_msgs::msg::LaserScan::SharedPtr laser_scan)
   {
-    laser_scan->header.stamp = get_clock()->now();
-    laser_scan->ranges.clear();
-    laser_scan->ranges.resize(360);
-    std::fill(laser_scan->ranges.begin(), laser_scan_->ranges.end(), 0.0);
+    laser_scan->ranges.resize((laser_scan_->angle_max - laser_scan_->angle_min) /
+                                laser_scan_->angle_increment +
+                              1);
+    std::fill(laser_scan->ranges.begin(), laser_scan->ranges.end(), 0.0);
 
     for (const auto &point : cloud->points) {
       float angle = std::atan2(point.y, point.x);
@@ -265,21 +267,21 @@ private:
           orb_slam3_system_->TrackMonocular(imageFrame, tImage);
         } else {
           if (vImuMeas.size() > 1) {
-            auto Tcw =
-              orb_slam3_system_->TrackMonocular(imageFrame, tImage, vImuMeas);
-            point_cloud2.header.stamp = rclcpp::Time(tImage);
-            laser_scan_->header.stamp = rclcpp::Time(tImage);
-            geometry_msgs::msg::Pose pose;
-            pose.position.x = Tcw.translation().x();
-            pose.position.y = Tcw.translation().y();
-            pose.position.z = Tcw.translation().z();
-            pose.orientation.x = Tcw.unit_quaternion().x();
-            pose.orientation.y = Tcw.unit_quaternion().y();
-            pose.orientation.z = Tcw.unit_quaternion().z();
-            pose.orientation.w = Tcw.unit_quaternion().w();
-            pose_array_.header.stamp = rclcpp::Time(tImage);
-            pose_array_.poses.push_back(pose);
-            pose_array_publisher_->publish(pose_array_);
+            // auto Tcw =
+            orb_slam3_system_->TrackMonocular(imageFrame, tImage, vImuMeas);
+            // point_cloud2_.header.stamp = rclcpp::Time(tImage);
+            // laser_scan_->header.stamp = rclcpp::Time(tImage);
+            // geometry_msgs::msg::Pose pose;
+            // pose.position.x = Tcw.translation().x();
+            // pose.position.y = Tcw.translation().y();
+            // pose.position.z = Tcw.translation().z();
+            // pose.orientation.x = Tcw.unit_quaternion().x();
+            // pose.orientation.y = Tcw.unit_quaternion().y();
+            // pose.orientation.z = Tcw.unit_quaternion().z();
+            // pose.orientation.w = Tcw.unit_quaternion().w();
+            // pose_array_.header.stamp = get_clock()->now();
+            // pose_array_.poses.push_back(pose);
+            // pose_array_publisher_->publish(pose_array_);
           }
         }
       } catch (const std::exception &e) {
@@ -301,7 +303,7 @@ private:
         std::make_shared<sensor_msgs::msg::Imu>(msg);
       imu_buf_.push(msg_ptr);
     } else {
-      RCLCPP_ERROR(get_logger(), "Invalid IMU data - NaN");
+      RCLCPP_ERROR(get_logger(), "Invalid IMU data - nan");
     }
     buf_mutex_imu_.unlock();
   }
@@ -317,20 +319,60 @@ private:
     t.transform.translation.z = 2;
     tf_broadcaster->sendTransform(t);
 
+    geometry_msgs::msg::TransformStamped Two_tf;
+    Two_tf.header.stamp = get_clock()->now();
+    Two_tf.header.frame_id = "point_cloud";
+    Two_tf.child_frame_id = "base_footprint";
+
+    geometry_msgs::msg::Pose pose;
+    if (orb_slam3_system_->isImuInitialized()) {
+      auto Two = orb_slam3_system_->GetCurrentPoseImu();
+      pose.position.x = Two.translation().x();
+      pose.position.y = Two.translation().y();
+      pose.position.z = Two.translation().z();
+      pose.orientation.x = Two.unit_quaternion().x();
+      pose.orientation.y = Two.unit_quaternion().y();
+      pose.orientation.z = Two.unit_quaternion().z();
+      pose.orientation.w = Two.unit_quaternion().w();
+      pose_array_.header.stamp = get_clock()->now();
+      pose_array_.poses.push_back(pose);
+      pose_array_publisher_->publish(pose_array_);
+      if (pose_array_.poses.size() > 1000) {
+        pose_array_.poses.erase(pose_array_.poses.begin());
+      }
+
+      Two_tf.transform.translation.x = Two.translation().x();
+      Two_tf.transform.translation.y = Two.translation().y();
+      Two_tf.transform.translation.z = Two.translation().z();
+      Two_tf.transform.rotation.x = Two.unit_quaternion().x();
+      Two_tf.transform.rotation.y = Two.unit_quaternion().y();
+      Two_tf.transform.rotation.z = Two.unit_quaternion().z();
+      Two_tf.transform.rotation.w = Two.unit_quaternion().w();
+      tf_broadcaster->sendTransform(Two_tf);
+    }
+
     pcl::PointCloud<pcl::PointXYZ> new_pcl_cloud =
       orb_slam3_system_->GetTrackedMapPointsPCL();
-    // pcl::PointCloud<pcl::PointXYZ>::Ptr new_pcl_cloud_ptr(
-    //   new pcl::PointCloud<pcl::PointXYZ>(new_pcl_cloud));
-    // sensor_msgs::msg::LaserScan::SharedPtr laser_scan;
-    // point_cloud_to_laser_scan(new_pcl_cloud_ptr, laser_scan);
+    pcl::PointCloud<pcl::PointXYZ>::Ptr new_pcl_cloud_ptr(
+      new pcl::PointCloud<pcl::PointXYZ>(new_pcl_cloud));
+    point_cloud_to_laser_scan(new_pcl_cloud_ptr, laser_scan_);
 
-    // pcl_cloud_ += new_pcl_cloud;
-    // pcl::toROSMsg(pcl_cloud_, point_cloud2);
-    //
-    // point_cloud2.header.frame_id = "point_cloud";
-    // point_cloud2_publisher->publish(point_cloud2);
-    //
-    // laser_scan_publisher_->publish(*laser_scan_);
+    pcl_cloud_ += new_pcl_cloud;
+    pcl::toROSMsg(pcl_cloud_, point_cloud2_);
+
+    sensor_msgs::msg::PointCloud2 tracked_point_cloud2;
+    pcl::toROSMsg(new_pcl_cloud, tracked_point_cloud2);
+
+    point_cloud2_.header.frame_id = "point_cloud";
+    point_cloud2_.header.stamp = get_clock()->now();
+    point_cloud2_publisher_->publish(point_cloud2_);
+
+    tracked_point_cloud2.header.frame_id = "point_cloud";
+    tracked_point_cloud2.header.stamp = get_clock()->now();
+    tracked_point_cloud2_publisher_->publish(tracked_point_cloud2);
+
+    laser_scan_->header.stamp = get_clock()->now();
+    laser_scan_publisher_->publish(*laser_scan_);
   }
 
   void octomap_timer_callback()
@@ -342,7 +384,9 @@ private:
   rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr image_sub;
   rclcpp::Subscription<sensor_msgs::msg::Imu>::SharedPtr imu_sub;
   rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr
-    point_cloud2_publisher;
+    point_cloud2_publisher_;
+  rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr
+    tracked_point_cloud2_publisher_;
   rclcpp::Publisher<sensor_msgs::msg::LaserScan>::SharedPtr
     laser_scan_publisher_;
   rclcpp::Publisher<geometry_msgs::msg::PoseArray>::SharedPtr
@@ -379,7 +423,7 @@ private:
   std::string vocabulary_file_path;
   std::string settings_file_path;
 
-  sensor_msgs::msg::PointCloud2 point_cloud2;
+  sensor_msgs::msg::PointCloud2 point_cloud2_;
   pcl::PointCloud<pcl::PointXYZ> pcl_cloud_;
 
   geometry_msgs::msg::PoseArray pose_array_;
