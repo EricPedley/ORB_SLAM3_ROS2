@@ -84,19 +84,24 @@ def generate_launch_description():
                     }
                 ],
             ),
+            # Node(
+            #     package="octomap_server",
+            #     executable="octomap_server_node",
+            #     output="screen",
+            #     parameters=[
+            #         {
+            #             "resolution": 0.05,
+            #             "frame_id": "map",
+            #             "sensor_model.max_range": 100.0,
+            #             # "filter_ground_plane": True,
+            #         }
+            #     ],
+            #     remappings=[("cloud_in", "orb_point_cloud2")],
+            # ),
             Node(
-                package="octomap_server",
-                executable="octomap_server_node",
+                package="slam_toolbox",
+                executable="async_slam_toolbox_node",
                 output="screen",
-                parameters=[
-                    {
-                        "resolution": 0.05,
-                        "frame_id": "map",
-                        "sensor_model.max_range": 100.0,
-                        # "filter_ground_plane": True,
-                    }
-                ],
-                remappings=[("cloud_in", "orb_point_cloud2")],
             ),
             Node(
                 package="tf2_ros",

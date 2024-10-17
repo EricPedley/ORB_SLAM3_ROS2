@@ -1,3 +1,4 @@
+#include <geometry_msgs/msg/pose_array.hpp>
 #include <geometry_msgs/msg/quaternion.hpp>
 #include <geometry_msgs/msg/vector3.hpp>
 #include <opencv2/calib3d.hpp>
@@ -9,6 +10,7 @@
 #include <rmw/qos_profiles.h>
 #include <sensor_msgs/msg/image.hpp>
 #include <sensor_msgs/msg/imu.hpp>
+#include <sensor_msgs/msg/laser_scan.hpp>
 #include <sensor_msgs/msg/point_cloud.hpp>
 #include <std_srvs/srv/empty.hpp>
 #include <tf2_ros/transform_broadcaster.h>
@@ -94,6 +96,10 @@ public:
     // create publishers
     point_cloud2_publisher =
       create_publisher<sensor_msgs::msg::PointCloud2>("orb_point_cloud2", 10);
+    laser_scan_publisher_ =
+      create_publisher<sensor_msgs::msg::LaserScan>("scan", 10);
+    pose_array_publisher_ =
+      create_publisher<geometry_msgs::msg::PoseArray>("pose_array", 10);
 
     // create subscriptions
     rclcpp::QoS image_qos(rclcpp::KeepLast(10));
@@ -118,7 +124,8 @@ public:
 
     // create clients
     octomap_server_client_ = create_client<std_srvs::srv::Empty>(
-      "octomap_server/reset", rmw_qos_profile_services_default, octomap_server_callback_group_);
+      "octomap_server/reset", rmw_qos_profile_services_default,
+      octomap_server_callback_group_);
 
     // tf broadcaster
     tf_broadcaster = std::make_unique<tf2_ros::TransformBroadcaster>(*this);
@@ -130,6 +137,17 @@ public:
     octomap_timer_ = create_wall_timer(
       10000ms, std::bind(&ImuMonoRealSense::octomap_timer_callback, this),
       octomap_timer_callback_group_);
+
+    // initialize other variables
+    laser_scan_ = std::make_shared<sensor_msgs::msg::LaserScan>();
+    laser_scan_->header.frame_id = "point_cloud";
+    laser_scan_->angle_min = -M_PI / 2;
+    laser_scan_->angle_max = M_PI / 2;
+    laser_scan_->angle_increment = M_PI / 180;
+    laser_scan_->range_min = 0.1;
+    laser_scan_->range_max = 20.0;
+
+    pose_array_.header.frame_id = "point_cloud";
   }
 
   ~ImuMonoRealSense()
@@ -168,6 +186,32 @@ private:
     }
   }
 
+  void
+  point_cloud_to_laser_scan(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud,
+                            sensor_msgs::msg::LaserScan::SharedPtr laser_scan)
+  {
+    laser_scan->header.stamp = get_clock()->now();
+    laser_scan->ranges.clear();
+    laser_scan->ranges.resize(360);
+    std::fill(laser_scan->ranges.begin(), laser_scan_->ranges.end(), 0.0);
+
+    for (const auto &point : cloud->points) {
+      float angle = std::atan2(point.y, point.x);
+      if (angle < -M_PI / 2 || angle > M_PI / 2) {
+        continue;
+      }
+      size_t index = (angle + M_PI / 2) / laser_scan->angle_increment;
+      float distance = std::sqrt(point.x * point.x + point.y * point.y);
+      if (index < 0 || index >= laser_scan->ranges.size()) {
+        continue;
+      }
+      if (laser_scan->ranges.at(index) <= 1e-6 ||
+          distance < laser_scan->ranges.at(index)) {
+        laser_scan->ranges[index] = point.z;
+      }
+    }
+  }
+
   void slam_service_callback(const std_srvs::srv::Empty::Request::SharedPtr,
                              const std_srvs::srv::Empty::Response::SharedPtr)
   {
@@ -176,8 +220,6 @@ private:
 
   void image_callback(const sensor_msgs::msg::Image::SharedPtr msg)
   {
-    output_video << get_image(msg); // write the frame to the output video
-
     img_buf_.push(msg);
 
     // begin to empty the img_buf_ queue, which is full of other queues
@@ -223,10 +265,21 @@ private:
           orb_slam3_system_->TrackMonocular(imageFrame, tImage);
         } else {
           if (vImuMeas.size() > 1) {
-            orb_slam3_system_->TrackMonocular(imageFrame, tImage, vImuMeas);
+            auto Tcw =
+              orb_slam3_system_->TrackMonocular(imageFrame, tImage, vImuMeas);
             point_cloud2.header.stamp = rclcpp::Time(tImage);
-            cv::imshow("test", imageFrame);
-            cv::waitKey(1);
+            laser_scan_->header.stamp = rclcpp::Time(tImage);
+            geometry_msgs::msg::Pose pose;
+            pose.position.x = Tcw.translation().x();
+            pose.position.y = Tcw.translation().y();
+            pose.position.z = Tcw.translation().z();
+            pose.orientation.x = Tcw.unit_quaternion().x();
+            pose.orientation.y = Tcw.unit_quaternion().y();
+            pose.orientation.z = Tcw.unit_quaternion().z();
+            pose.orientation.w = Tcw.unit_quaternion().w();
+            pose_array_.header.stamp = rclcpp::Time(tImage);
+            pose_array_.poses.push_back(pose);
+            pose_array_publisher_->publish(pose_array_);
           }
         }
       } catch (const std::exception &e) {
@@ -264,24 +317,36 @@ private:
     t.transform.translation.z = 2;
     tf_broadcaster->sendTransform(t);
 
-    pcl::PointCloud<pcl::PointXYZ> cloud = orb_slam3_system_->GetMapPCL();
+    pcl::PointCloud<pcl::PointXYZ> new_pcl_cloud =
+      orb_slam3_system_->GetTrackedMapPointsPCL();
+    // pcl::PointCloud<pcl::PointXYZ>::Ptr new_pcl_cloud_ptr(
+    //   new pcl::PointCloud<pcl::PointXYZ>(new_pcl_cloud));
+    // sensor_msgs::msg::LaserScan::SharedPtr laser_scan;
+    // point_cloud_to_laser_scan(new_pcl_cloud_ptr, laser_scan);
 
-    pcl::toROSMsg(cloud, point_cloud2);
-
-    point_cloud2.header.frame_id = "point_cloud";
-    point_cloud2_publisher->publish(point_cloud2);
+    // pcl_cloud_ += new_pcl_cloud;
+    // pcl::toROSMsg(pcl_cloud_, point_cloud2);
+    //
+    // point_cloud2.header.frame_id = "point_cloud";
+    // point_cloud2_publisher->publish(point_cloud2);
+    //
+    // laser_scan_publisher_->publish(*laser_scan_);
   }
 
   void octomap_timer_callback()
   {
-    octomap_server_client_->async_send_request(
-      std::make_shared<std_srvs::srv::Empty::Request>());
+    // octomap_server_client_->async_send_request(
+    //   std::make_shared<std_srvs::srv::Empty::Request>());
   }
 
   rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr image_sub;
   rclcpp::Subscription<sensor_msgs::msg::Imu>::SharedPtr imu_sub;
   rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr
     point_cloud2_publisher;
+  rclcpp::Publisher<sensor_msgs::msg::LaserScan>::SharedPtr
+    laser_scan_publisher_;
+  rclcpp::Publisher<geometry_msgs::msg::PoseArray>::SharedPtr
+    pose_array_publisher_;
   rclcpp::Service<std_srvs::srv::Empty>::SharedPtr slam_service;
   rclcpp::Client<std_srvs::srv::Empty>::SharedPtr octomap_server_client_;
   rclcpp::TimerBase::SharedPtr timer;
@@ -297,13 +362,9 @@ private:
   std::unique_ptr<tf2_ros::TransformBroadcaster> tf_broadcaster;
 
   sensor_msgs::msg::Imu imu_msg;
+  std::shared_ptr<sensor_msgs::msg::LaserScan> laser_scan_;
 
   std::string sensor_type_param;
-
-  cv::VideoCapture input_video;
-  cv::VideoWriter output_video;
-  std::ifstream imu_file;
-  std::ifstream video_timestamp_file;
 
   std::vector<geometry_msgs::msg::Vector3> vGyro;
   std::vector<double> vGyro_times;
@@ -319,10 +380,11 @@ private:
   std::string settings_file_path;
 
   sensor_msgs::msg::PointCloud2 point_cloud2;
+  pcl::PointCloud<pcl::PointXYZ> pcl_cloud_;
+
+  geometry_msgs::msg::PoseArray pose_array_;
 
   std::shared_ptr<ORB_SLAM3::IMU::Point> initial_orientation;
-
-  bool imu_initialized = false;
 };
 
 int main(int argc, char *argv[])
