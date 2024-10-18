@@ -14,8 +14,6 @@
 #include <sensor_msgs/msg/point_cloud.hpp>
 #include <std_srvs/srv/empty.hpp>
 #include <tf2_ros/transform_broadcaster.h>
-#include <tf2_ros/transform_listener.h>
-#include <tf2_ros/buffer.h>
 
 #include <sstream>
 
@@ -124,10 +122,6 @@ public:
     // tf broadcaster
     tf_broadcaster = std::make_unique<tf2_ros::TransformBroadcaster>(*this);
 
-    // tf listener
-    tf_buffer_ = std::make_unique<tf2_ros::Buffer>(get_clock());
-    tf_listener_ = std::make_shared<tf2_ros::TransformListener>(*tf_buffer_);
-
     // create timer
     timer = create_wall_timer(
       1000ms, std::bind(&ImuMonoRealSense::timer_callback, this),
@@ -148,7 +142,7 @@ private:
     laser_scan_->header.frame_id = "base_footprint";
     laser_scan_->angle_min = -M_PI / 2;
     laser_scan_->angle_max = M_PI / 2;
-    laser_scan_->angle_increment = M_PI / 720;
+    laser_scan_->angle_increment = M_PI / 360;
     laser_scan_->range_min = 0.01;
     laser_scan_->range_max = 100.0;
 
@@ -206,8 +200,7 @@ private:
   {
     laser_scan->ranges.resize(
       (laser_scan_->angle_max - laser_scan_->angle_min) /
-        laser_scan_->angle_increment +
-      1);
+        laser_scan_->angle_increment);
     std::fill(laser_scan->ranges.begin(), laser_scan->ranges.end(), 0.0);
 
     for (const auto &point : cloud->points) {
@@ -225,7 +218,6 @@ private:
       if (laser_scan->ranges.at(index) <= 1e-6 ||
           distance < laser_scan->ranges.at(index)) {
         laser_scan->ranges[index] = distance;
-      } else {
       }
     }
   }
@@ -313,6 +305,34 @@ private:
               // Tco_tf.transform.rotation.z = Tco.unit_quaternion().z();
               // Tco_tf.transform.rotation.w = Tco.unit_quaternion().w();
               tf_broadcaster->sendTransform(Tco_tf);
+
+              geometry_msgs::msg::TransformStamped scan_tf;
+              scan_tf.header.stamp = get_clock()->now();
+              scan_tf.header.frame_id = "base_footprint";
+              scan_tf.child_frame_id = "scan";
+
+              pcl::PointCloud<pcl::PointXYZ> new_pcl_cloud =
+                orb_slam3_system_->GetTrackedMapPointsPCL();
+              pcl::PointCloud<pcl::PointXYZ>::Ptr new_pcl_cloud_ptr(
+                new pcl::PointCloud<pcl::PointXYZ>(new_pcl_cloud));
+              point_cloud_to_laser_scan(new_pcl_cloud_ptr, laser_scan_);
+
+              pcl_cloud_ = orb_slam3_system_->GetMapPCL();
+              pcl::toROSMsg(pcl_cloud_, point_cloud2_);
+
+              sensor_msgs::msg::PointCloud2 tracked_point_cloud2;
+              pcl::toROSMsg(new_pcl_cloud, tracked_point_cloud2);
+
+              point_cloud2_.header.frame_id = "point_cloud";
+              point_cloud2_.header.stamp = get_clock()->now();
+              point_cloud2_publisher_->publish(point_cloud2_);
+
+              tracked_point_cloud2.header.frame_id = "point_cloud";
+              tracked_point_cloud2.header.stamp = get_clock()->now();
+              tracked_point_cloud2_publisher_->publish(tracked_point_cloud2);
+
+              laser_scan_->header.stamp = get_clock()->now();
+              laser_scan_publisher_->publish(*laser_scan_);
             }
           }
         }
@@ -343,19 +363,6 @@ private:
   void timer_callback()
   {
     unique_lock<mutex> lock(orbslam3_mutex_);
-
-    geometry_msgs::msg::TransformStamped t_listen;
-    try {
-      t_listen = tf_buffer_->lookupTransform("point_cloud", "base_footprint",
-                                             tf2::TimePointZero);
-    } catch (tf2::TransformException &ex) {
-      RCLCPP_ERROR(get_logger(), "%s", ex.what());
-      return;
-    }
-
-    RCLCPP_INFO_STREAM(get_logger(), std::fixed << std::setprecision(2) << "t_listen: " << t_listen.header.stamp.sec << "." << t_listen.header.stamp.nanosec);
-    RCLCPP_INFO_STREAM(get_logger(), std::fixed << std::setprecision(10) << "t_now: " << get_clock()->now().seconds() << " nanosecs: " << get_clock()->now().nanoseconds());
-
     geometry_msgs::msg::TransformStamped t;
     t.header.stamp = get_clock()->now();
     t.header.frame_id = "map";
@@ -394,41 +401,6 @@ private:
     } else {
       initialize_variables();
     }
-
-    pcl::PointCloud<pcl::PointXYZ> new_pcl_cloud =
-      orb_slam3_system_->GetTrackedMapPointsPCL();
-    pcl::PointCloud<pcl::PointXYZ>::Ptr new_pcl_cloud_ptr(
-      new pcl::PointCloud<pcl::PointXYZ>(new_pcl_cloud));
-    point_cloud_to_laser_scan(new_pcl_cloud_ptr, laser_scan_);
-
-    // RCLCPP_INFO_STREAM(get_logger(), "point cloud object");
-    // for (const auto &point : new_pcl_cloud.points) {
-    //   RCLCPP_INFO_STREAM(get_logger(), "x: " << point.x << " y: " << point.y
-    //                                          << "z: " << point.z);
-    // }
-    //
-    // RCLCPP_INFO_STREAM(get_logger(), "piont cloud ptr");
-    // for (const auto &point : new_pcl_cloud_ptr->points) {
-    //   RCLCPP_INFO_STREAM(get_logger(), "x: " << point.x << " y: " << point.y
-    //                                          << "z: " << point.z);
-    // }
-
-    pcl_cloud_ = orb_slam3_system_->GetMapPCL();
-    pcl::toROSMsg(pcl_cloud_, point_cloud2_);
-
-    sensor_msgs::msg::PointCloud2 tracked_point_cloud2;
-    pcl::toROSMsg(new_pcl_cloud, tracked_point_cloud2);
-
-    point_cloud2_.header.frame_id = "point_cloud";
-    point_cloud2_.header.stamp = get_clock()->now();
-    point_cloud2_publisher_->publish(point_cloud2_);
-
-    tracked_point_cloud2.header.frame_id = "point_cloud";
-    tracked_point_cloud2.header.stamp = get_clock()->now();
-    tracked_point_cloud2_publisher_->publish(tracked_point_cloud2);
-
-    laser_scan_->header.stamp = get_clock()->now();
-    laser_scan_publisher_->publish(*laser_scan_);
   }
 
   rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr image_sub;
@@ -451,8 +423,6 @@ private:
   rclcpp::CallbackGroup::SharedPtr timer_callback_group_;
 
   std::unique_ptr<tf2_ros::TransformBroadcaster> tf_broadcaster;
-  std::shared_ptr<tf2_ros::TransformListener> tf_listener_{nullptr};
-  std::unique_ptr<tf2_ros::Buffer> tf_buffer_;
 
   sensor_msgs::msg::Imu imu_msg;
   std::shared_ptr<sensor_msgs::msg::LaserScan> laser_scan_;
