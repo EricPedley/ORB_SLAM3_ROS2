@@ -142,7 +142,7 @@ public:
 
     // initialize other variables
     laser_scan_ = std::make_shared<sensor_msgs::msg::LaserScan>();
-    laser_scan_->header.frame_id = "point_cloud";
+    laser_scan_->header.frame_id = "base_footprint";
     laser_scan_->angle_min = -M_PI / 2;
     laser_scan_->angle_max = M_PI / 2;
     laser_scan_->angle_increment = M_PI / 720;
@@ -197,19 +197,25 @@ private:
                               1);
     std::fill(laser_scan->ranges.begin(), laser_scan->ranges.end(), 0.0);
 
+    RCLCPP_INFO_STREAM(get_logger(), "cloud size: " << cloud->points.size());
     for (const auto &point : cloud->points) {
       float angle = std::atan2(point.y, point.x);
-      if (angle < -M_PI / 2 || angle > M_PI / 2) {
+      if (angle < -M_PI || angle > M_PI) {
+        RCLCPP_INFO_STREAM(get_logger(), "angle out of range: " << angle);
         continue;
       }
       size_t index = (angle + M_PI / 2) / laser_scan->angle_increment;
       float distance = std::sqrt(point.x * point.x + point.y * point.y);
+      RCLCPP_INFO_STREAM(get_logger(), "x: " << point.x << " y: " << point.y << " z: " << point.z);
       if (index < 0 || index >= laser_scan->ranges.size()) {
+        RCLCPP_INFO_STREAM(get_logger(), "index out of range: " << index);
         continue;
       }
       if (laser_scan->ranges.at(index) <= 1e-6 ||
           distance < laser_scan->ranges.at(index)) {
-        laser_scan->ranges[index] = point.z;
+        RCLCPP_INFO_STREAM(get_logger(), "distance: " << distance);
+        RCLCPP_INFO_STREAM(get_logger(), "index: " << index);
+        laser_scan->ranges[index] = distance;
       }
     }
   }
@@ -349,15 +355,19 @@ private:
       Two_tf.transform.rotation.z = Two.unit_quaternion().z();
       Two_tf.transform.rotation.w = Two.unit_quaternion().w();
       tf_broadcaster->sendTransform(Two_tf);
+    } else {
+      point_cloud2_ = sensor_msgs::msg::PointCloud2();
+      laser_scan_ = std::make_shared<sensor_msgs::msg::LaserScan>();
+      pose_array_ = geometry_msgs::msg::PoseArray();
     }
 
     pcl::PointCloud<pcl::PointXYZ> new_pcl_cloud =
-      orb_slam3_system_->GetTrackedMapPointsPCL();
+      orb_slam3_system_->GetMapPCL();
     pcl::PointCloud<pcl::PointXYZ>::Ptr new_pcl_cloud_ptr(
       new pcl::PointCloud<pcl::PointXYZ>(new_pcl_cloud));
     point_cloud_to_laser_scan(new_pcl_cloud_ptr, laser_scan_);
 
-    pcl_cloud_ += new_pcl_cloud;
+    pcl_cloud_ = orb_slam3_system_->GetMapPCL();
     pcl::toROSMsg(pcl_cloud_, point_cloud2_);
 
     sensor_msgs::msg::PointCloud2 tracked_point_cloud2;

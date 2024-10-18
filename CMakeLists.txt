@@ -83,17 +83,6 @@ set(THIS_PACKAGE_INCLUDE_DEPENDS
 #     message(FATAL_ERROR "Could not find Eigen3")
 # endif()
 
-
-# # Add executable
-# add_executable(example_mono_node_cpp
-#   src/mono_example.cpp
-#   src/common.cpp
-# )
-
-# add_executable(mono_node_cpp
-#   src/mono_realsense.cpp
-# )
-#
 add_executable(imu_mono_node_cpp
   src/imu_mono_realsense.cpp
 )
@@ -109,14 +98,6 @@ add_executable(visualize_point_cloud
 add_executable(apriltag_node
     src/apriltag_node.cpp
 )
-
-# ament_target_dependencies(example_mono_node_cpp
-#   PUBLIC ${THIS_PACKAGE_INCLUDE_DEPENDS}
-# )
-
-# ament_target_dependencies(mono_node_cpp
-#   PUBLIC ${THIS_PACKAGE_INCLUDE_DEPENDS}
-# )
 
 ament_target_dependencies(imu_mono_node_cpp
   PUBLIC ${THIS_PACKAGE_INCLUDE_DEPENDS}
