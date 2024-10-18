@@ -14,9 +14,9 @@
 #include <sensor_msgs/msg/point_cloud.hpp>
 #include <std_srvs/srv/empty.hpp>
 #include <tf2_ros/transform_broadcaster.h>
+#include <tf2_ros/transform_listener.h>
+#include <tf2_ros/buffer.h>
 
-#include <chrono>
-#include <fstream>
 #include <sstream>
 
 #include <cv_bridge/cv_bridge.h>
@@ -124,6 +124,10 @@ public:
     // tf broadcaster
     tf_broadcaster = std::make_unique<tf2_ros::TransformBroadcaster>(*this);
 
+    // tf listener
+    tf_buffer_ = std::make_unique<tf2_ros::Buffer>(get_clock());
+    tf_listener_ = std::make_shared<tf2_ros::TransformListener>(*tf_buffer_);
+
     // create timer
     timer = create_wall_timer(
       1000ms, std::bind(&ImuMonoRealSense::timer_callback, this),
@@ -149,7 +153,7 @@ private:
     laser_scan_->range_max = 100.0;
 
     pose_array_ = geometry_msgs::msg::PoseArray();
-    pose_array_.header.frame_id = "base_footprint";
+    pose_array_.header.frame_id = "point_cloud";
 
     point_cloud2_ = sensor_msgs::msg::PointCloud2();
     point_cloud2_.header.frame_id = "point_cloud";
@@ -296,7 +300,19 @@ private:
               pose.orientation.w = Tco.unit_quaternion().w();
               pose_array_.header.stamp = get_clock()->now();
               pose_array_.poses.push_back(pose);
-              pose_array_publisher_->publish(pose_array_);
+
+              geometry_msgs::msg::TransformStamped Tco_tf;
+              Tco_tf.header.stamp = get_clock()->now();
+              Tco_tf.header.frame_id = "point_cloud";
+              Tco_tf.child_frame_id = "base_footprint";
+              Tco_tf.transform.translation.x = Tco.translation().x();
+              Tco_tf.transform.translation.y = Tco.translation().y();
+              Tco_tf.transform.translation.z = Tco.translation().z();
+              // Tco_tf.transform.rotation.x = Tco.unit_quaternion().x();
+              // Tco_tf.transform.rotation.y = Tco.unit_quaternion().y();
+              // Tco_tf.transform.rotation.z = Tco.unit_quaternion().z();
+              // Tco_tf.transform.rotation.w = Tco.unit_quaternion().w();
+              tf_broadcaster->sendTransform(Tco_tf);
             }
           }
         }
@@ -327,6 +343,19 @@ private:
   void timer_callback()
   {
     unique_lock<mutex> lock(orbslam3_mutex_);
+
+    geometry_msgs::msg::TransformStamped t_listen;
+    try {
+      t_listen = tf_buffer_->lookupTransform("point_cloud", "base_footprint",
+                                             tf2::TimePointZero);
+    } catch (tf2::TransformException &ex) {
+      RCLCPP_ERROR(get_logger(), "%s", ex.what());
+      return;
+    }
+
+    RCLCPP_INFO_STREAM(get_logger(), std::fixed << std::setprecision(2) << "t_listen: " << t_listen.header.stamp.sec << "." << t_listen.header.stamp.nanosec);
+    RCLCPP_INFO_STREAM(get_logger(), std::fixed << std::setprecision(10) << "t_now: " << get_clock()->now().seconds() << " nanosecs: " << get_clock()->now().nanoseconds());
+
     geometry_msgs::msg::TransformStamped t;
     t.header.stamp = get_clock()->now();
     t.header.frame_id = "map";
@@ -335,36 +364,33 @@ private:
     t.transform.translation.z = 2;
     tf_broadcaster->sendTransform(t);
 
-    geometry_msgs::msg::TransformStamped Two_tf;
-    Two_tf.header.stamp = get_clock()->now();
-    Two_tf.header.frame_id = "point_cloud";
-    Two_tf.child_frame_id = "base_footprint";
-
     geometry_msgs::msg::Pose pose;
     if (orb_slam3_system_->isImuInitialized()) {
-      auto Two = orb_slam3_system_->GetCurrentPoseImu();
-      pose.position.x = Two.translation().x();
-      pose.position.y = Two.translation().y();
-      pose.position.z = Two.translation().z();
-      pose.orientation.x = Two.unit_quaternion().x();
-      pose.orientation.y = Two.unit_quaternion().y();
-      pose.orientation.z = Two.unit_quaternion().z();
-      pose.orientation.w = Two.unit_quaternion().w();
-      pose_array_.header.stamp = get_clock()->now();
-      pose_array_.poses.push_back(pose);
-      pose_array_publisher_->publish(pose_array_);
+      // auto Two = orb_slam3_system_->GetCurrentPoseImu();
+      // pose.position.x = Two.translation().x();
+      // pose.position.y = Two.translation().y();
+      // pose.position.z = Two.translation().z();
+      // pose.orientation.x = Two.unit_quaternion().x();
+      // pose.orientation.y = Two.unit_quaternion().y();
+      // pose.orientation.z = Two.unit_quaternion().z();
+      // pose.orientation.w = Two.unit_quaternion().w();
+      // pose_array_.header.stamp = get_clock()->now();
+      // pose_array_.poses.push_back(pose);
+      // pose_array_publisher_->publish(pose_array_);
       if (pose_array_.poses.size() > 1000) {
         pose_array_.poses.erase(pose_array_.poses.begin());
       }
+      pose_array_.header.stamp = get_clock()->now();
+      pose_array_publisher_->publish(pose_array_);
 
-      Two_tf.transform.translation.x = Two.translation().x();
-      Two_tf.transform.translation.y = Two.translation().y();
-      Two_tf.transform.translation.z = Two.translation().z();
-      Two_tf.transform.rotation.x = Two.unit_quaternion().x();
-      Two_tf.transform.rotation.y = Two.unit_quaternion().y();
-      Two_tf.transform.rotation.z = Two.unit_quaternion().z();
-      Two_tf.transform.rotation.w = Two.unit_quaternion().w();
-      tf_broadcaster->sendTransform(Two_tf);
+      // Two_tf.transform.translation.x = Two.translation().x();
+      // Two_tf.transform.translation.y = Two.translation().y();
+      // Two_tf.transform.translation.z = Two.translation().z();
+      // Two_tf.transform.rotation.x = Two.unit_quaternion().x();
+      // Two_tf.transform.rotation.y = Two.unit_quaternion().y();
+      // Two_tf.transform.rotation.z = Two.unit_quaternion().z();
+      // Two_tf.transform.rotation.w = Two.unit_quaternion().w();
+      // tf_broadcaster->sendTransform(Two_tf);
     } else {
       initialize_variables();
     }
@@ -425,6 +451,8 @@ private:
   rclcpp::CallbackGroup::SharedPtr timer_callback_group_;
 
   std::unique_ptr<tf2_ros::TransformBroadcaster> tf_broadcaster;
+  std::shared_ptr<tf2_ros::TransformListener> tf_listener_{nullptr};
+  std::unique_ptr<tf2_ros::Buffer> tf_buffer_;
 
   sensor_msgs::msg::Imu imu_msg;
   std::shared_ptr<sensor_msgs::msg::LaserScan> laser_scan_;

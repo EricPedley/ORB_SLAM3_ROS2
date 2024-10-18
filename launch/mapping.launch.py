@@ -48,6 +48,17 @@ def generate_launch_description():
                 default_value=bag_name,
                 description="The name of the bag if record_bag is true. By default, the name of the bag will be ORB_SLAM3_YYYY-MM-DD_HH-mm-ss",
             ),
+            DeclareLaunchArgument(
+                "slam_params_file",
+                default_value=PathJoinSubstitution(
+                    [
+                        FindPackageShare("orb_slam3_ros2"),
+                        "config",
+                        "mapper_params_online_async.yaml",
+                    ],
+                ),
+                description="Full path to the ROS2 parameters file to use for the slam_toolbox node",
+            ),
             IncludeLaunchDescription(
                 PythonLaunchDescriptionSource(
                     PathJoinSubstitution(
@@ -102,6 +113,12 @@ def generate_launch_description():
                 package="slam_toolbox",
                 executable="async_slam_toolbox_node",
                 output="screen",
+                parameters=[
+                    {
+                        "slam_params_file": LaunchConfiguration("slam_params_file"),
+                        "use_sim_time": True,
+                    }
+                ],
             ),
             Node(
                 package="tf2_ros",

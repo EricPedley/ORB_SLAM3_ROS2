@@ -8,6 +8,7 @@ Panels:
         - /Status1
         - /LaserScan1
         - /LaserScan1/Status1
+        - /LaserScan1/Topic1
         - /PointCloud22
       Splitter Ratio: 0.5
     Tree Height: 719
@@ -28,7 +29,7 @@ Panels:
     Experimental: false
     Name: Time
     SyncMode: 0
-    SyncSource: PointCloud2
+    SyncSource: LaserScan
 Visualization Manager:
   Class: ""
   Displays:
@@ -146,7 +147,7 @@ Visualization Manager:
         Durability Policy: Volatile
         Filter size: 10
         History Policy: Keep Last
-        Reliability Policy: Reliable
+        Reliability Policy: Best Effort
         Value: /scan
       Use Fixed Frame: true
       Use rainbow: true
@@ -252,7 +253,7 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz_default_plugins/Orbit
-      Distance: 30.837162017822266
+      Distance: 36.20383071899414
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
@@ -267,10 +268,10 @@ Visualization Manager:
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Pitch: 0.9154016971588135
+      Pitch: 1.1754015684127808
       Target Frame: <Fixed Frame>
       Value: Orbit (rviz)
-      Yaw: 0.018549218773841858
+      Yaw: 0.5585490465164185
     Saved: ~
 Window Geometry:
   Displays:
