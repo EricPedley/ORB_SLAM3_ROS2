@@ -61,10 +61,6 @@ public:
       create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
     timer_callback_group_ =
       create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
-    octomap_server_callback_group_ =
-      create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
-    octomap_timer_callback_group_ =
-      create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
 
     rclcpp::SubscriptionOptions image_options;
     image_options.callback_group = image_callback_group_;
@@ -97,11 +93,12 @@ public:
     point_cloud2_publisher_ =
       create_publisher<sensor_msgs::msg::PointCloud2>("orb_point_cloud2", 10);
     tracked_point_cloud2_publisher_ =
-      create_publisher<sensor_msgs::msg::PointCloud2>("tracked_point_cloud2", 10);
+      create_publisher<sensor_msgs::msg::PointCloud2>("tracked_point_cloud2",
+                                                      10);
     laser_scan_publisher_ =
       create_publisher<sensor_msgs::msg::LaserScan>("scan", 10);
     pose_array_publisher_ =
-      create_publisher<geometry_msgs::msg::PoseArray>("pose_array", 10);
+      create_publisher<geometry_msgs::msg::PoseArray>("pose_array", 100);
 
     // create subscriptions
     rclcpp::QoS image_qos(rclcpp::KeepLast(10));
@@ -124,32 +121,15 @@ public:
       std::bind(&ImuMonoRealSense::slam_service_callback, this, _1, _2),
       rmw_qos_profile_services_default, slam_service_callback_group_);
 
-    // create clients
-    octomap_server_client_ = create_client<std_srvs::srv::Empty>(
-      "octomap_server/reset", rmw_qos_profile_services_default,
-      octomap_server_callback_group_);
-
     // tf broadcaster
     tf_broadcaster = std::make_unique<tf2_ros::TransformBroadcaster>(*this);
 
     // create timer
     timer = create_wall_timer(
-      500ms, std::bind(&ImuMonoRealSense::timer_callback, this),
+      1000ms, std::bind(&ImuMonoRealSense::timer_callback, this),
       timer_callback_group_);
-    octomap_timer_ = create_wall_timer(
-      10000ms, std::bind(&ImuMonoRealSense::octomap_timer_callback, this),
-      octomap_timer_callback_group_);
 
-    // initialize other variables
-    laser_scan_ = std::make_shared<sensor_msgs::msg::LaserScan>();
-    laser_scan_->header.frame_id = "base_footprint";
-    laser_scan_->angle_min = -M_PI / 2;
-    laser_scan_->angle_max = M_PI / 2;
-    laser_scan_->angle_increment = M_PI / 720;
-    laser_scan_->range_min = 0.01;
-    laser_scan_->range_max = 100.0;
-
-    pose_array_.header.frame_id = "point_cloud";
+    initialize_variables();
   }
 
   ~ImuMonoRealSense()
@@ -158,6 +138,23 @@ public:
   }
 
 private:
+  void initialize_variables()
+  {
+    laser_scan_ = std::make_shared<sensor_msgs::msg::LaserScan>();
+    laser_scan_->header.frame_id = "base_footprint";
+    laser_scan_->angle_min = -M_PI / 2;
+    laser_scan_->angle_max = M_PI / 2;
+    laser_scan_->angle_increment = M_PI / 720;
+    laser_scan_->range_min = 0.01;
+    laser_scan_->range_max = 100.0;
+
+    pose_array_ = geometry_msgs::msg::PoseArray();
+    pose_array_.header.frame_id = "base_footprint";
+
+    point_cloud2_ = sensor_msgs::msg::PointCloud2();
+    point_cloud2_.header.frame_id = "point_cloud";
+  }
+
   std::string generate_timestamp_string()
   {
     std::time_t now = std::time(nullptr);
@@ -188,34 +185,43 @@ private:
     }
   }
 
+  double normalize_angle(double rad)
+  {
+    if (rad < 0) {
+      return rad + 2 * M_PI;
+    } else if (rad > 2 * M_PI) {
+      return rad - 2 * M_PI;
+    } else {
+      return rad;
+    }
+  }
+
   void
   point_cloud_to_laser_scan(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud,
                             sensor_msgs::msg::LaserScan::SharedPtr laser_scan)
   {
-    laser_scan->ranges.resize((laser_scan_->angle_max - laser_scan_->angle_min) /
-                                laser_scan_->angle_increment +
-                              1);
+    laser_scan->ranges.resize(
+      (laser_scan_->angle_max - laser_scan_->angle_min) /
+        laser_scan_->angle_increment +
+      1);
     std::fill(laser_scan->ranges.begin(), laser_scan->ranges.end(), 0.0);
 
-    RCLCPP_INFO_STREAM(get_logger(), "cloud size: " << cloud->points.size());
     for (const auto &point : cloud->points) {
       float angle = std::atan2(point.y, point.x);
       if (angle < -M_PI || angle > M_PI) {
-        RCLCPP_INFO_STREAM(get_logger(), "angle out of range: " << angle);
         continue;
       }
-      size_t index = (angle + M_PI / 2) / laser_scan->angle_increment;
+      angle += M_PI / 2;
+      angle = normalize_angle(angle);
+      size_t index = angle / laser_scan->angle_increment;
       float distance = std::sqrt(point.x * point.x + point.y * point.y);
-      RCLCPP_INFO_STREAM(get_logger(), "x: " << point.x << " y: " << point.y << " z: " << point.z);
       if (index < 0 || index >= laser_scan->ranges.size()) {
-        RCLCPP_INFO_STREAM(get_logger(), "index out of range: " << index);
         continue;
       }
       if (laser_scan->ranges.at(index) <= 1e-6 ||
           distance < laser_scan->ranges.at(index)) {
-        RCLCPP_INFO_STREAM(get_logger(), "distance: " << distance);
-        RCLCPP_INFO_STREAM(get_logger(), "index: " << index);
         laser_scan->ranges[index] = distance;
+      } else {
       }
     }
   }
@@ -273,21 +279,25 @@ private:
           orb_slam3_system_->TrackMonocular(imageFrame, tImage);
         } else {
           if (vImuMeas.size() > 1) {
-            // auto Tcw =
-            orb_slam3_system_->TrackMonocular(imageFrame, tImage, vImuMeas);
-            // point_cloud2_.header.stamp = rclcpp::Time(tImage);
-            // laser_scan_->header.stamp = rclcpp::Time(tImage);
-            // geometry_msgs::msg::Pose pose;
-            // pose.position.x = Tcw.translation().x();
-            // pose.position.y = Tcw.translation().y();
-            // pose.position.z = Tcw.translation().z();
-            // pose.orientation.x = Tcw.unit_quaternion().x();
-            // pose.orientation.y = Tcw.unit_quaternion().y();
-            // pose.orientation.z = Tcw.unit_quaternion().z();
-            // pose.orientation.w = Tcw.unit_quaternion().w();
-            // pose_array_.header.stamp = get_clock()->now();
-            // pose_array_.poses.push_back(pose);
-            // pose_array_publisher_->publish(pose_array_);
+            auto Tcw =
+              orb_slam3_system_->TrackMonocular(imageFrame, tImage, vImuMeas);
+            if (orb_slam3_system_->isImuInitialized()) {
+              auto Two = orb_slam3_system_->GetCurrentPoseImu();
+              auto Tco = Two * Tcw.inverse();
+              // point_cloud2_.header.stamp = rclcpp::Time(tImage);
+              // laser_scan_->header.stamp = rclcpp::Time(tImage);
+              geometry_msgs::msg::Pose pose;
+              pose.position.x = Tco.translation().x();
+              pose.position.y = Tco.translation().y();
+              pose.position.z = Tco.translation().z();
+              pose.orientation.x = Tco.unit_quaternion().x();
+              pose.orientation.y = Tco.unit_quaternion().y();
+              pose.orientation.z = Tco.unit_quaternion().z();
+              pose.orientation.w = Tco.unit_quaternion().w();
+              pose_array_.header.stamp = get_clock()->now();
+              pose_array_.poses.push_back(pose);
+              pose_array_publisher_->publish(pose_array_);
+            }
           }
         }
       } catch (const std::exception &e) {
@@ -356,16 +366,26 @@ private:
       Two_tf.transform.rotation.w = Two.unit_quaternion().w();
       tf_broadcaster->sendTransform(Two_tf);
     } else {
-      point_cloud2_ = sensor_msgs::msg::PointCloud2();
-      laser_scan_ = std::make_shared<sensor_msgs::msg::LaserScan>();
-      pose_array_ = geometry_msgs::msg::PoseArray();
+      initialize_variables();
     }
 
     pcl::PointCloud<pcl::PointXYZ> new_pcl_cloud =
-      orb_slam3_system_->GetMapPCL();
+      orb_slam3_system_->GetTrackedMapPointsPCL();
     pcl::PointCloud<pcl::PointXYZ>::Ptr new_pcl_cloud_ptr(
       new pcl::PointCloud<pcl::PointXYZ>(new_pcl_cloud));
     point_cloud_to_laser_scan(new_pcl_cloud_ptr, laser_scan_);
+
+    // RCLCPP_INFO_STREAM(get_logger(), "point cloud object");
+    // for (const auto &point : new_pcl_cloud.points) {
+    //   RCLCPP_INFO_STREAM(get_logger(), "x: " << point.x << " y: " << point.y
+    //                                          << "z: " << point.z);
+    // }
+    //
+    // RCLCPP_INFO_STREAM(get_logger(), "piont cloud ptr");
+    // for (const auto &point : new_pcl_cloud_ptr->points) {
+    //   RCLCPP_INFO_STREAM(get_logger(), "x: " << point.x << " y: " << point.y
+    //                                          << "z: " << point.z);
+    // }
 
     pcl_cloud_ = orb_slam3_system_->GetMapPCL();
     pcl::toROSMsg(pcl_cloud_, point_cloud2_);
@@ -385,12 +405,6 @@ private:
     laser_scan_publisher_->publish(*laser_scan_);
   }
 
-  void octomap_timer_callback()
-  {
-    // octomap_server_client_->async_send_request(
-    //   std::make_shared<std_srvs::srv::Empty::Request>());
-  }
-
   rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr image_sub;
   rclcpp::Subscription<sensor_msgs::msg::Imu>::SharedPtr imu_sub;
   rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr
@@ -404,14 +418,11 @@ private:
   rclcpp::Service<std_srvs::srv::Empty>::SharedPtr slam_service;
   rclcpp::Client<std_srvs::srv::Empty>::SharedPtr octomap_server_client_;
   rclcpp::TimerBase::SharedPtr timer;
-  rclcpp::TimerBase::SharedPtr octomap_timer_;
 
   rclcpp::CallbackGroup::SharedPtr image_callback_group_;
   rclcpp::CallbackGroup::SharedPtr imu_callback_group_;
   rclcpp::CallbackGroup::SharedPtr slam_service_callback_group_;
-  rclcpp::CallbackGroup::SharedPtr octomap_server_callback_group_;
   rclcpp::CallbackGroup::SharedPtr timer_callback_group_;
-  rclcpp::CallbackGroup::SharedPtr octomap_timer_callback_group_;
 
   std::unique_ptr<tf2_ros::TransformBroadcaster> tf_broadcaster;
 
