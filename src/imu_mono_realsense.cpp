@@ -129,6 +129,9 @@ public:
       1000ms, std::bind(&ImuMonoRealSense::timer_callback, this),
       timer_callback_group_);
 
+    // prev_imu_->t = 0.0;
+    // prev_imu_->a = {0.0, 0.0, 0.0};
+    // prev_imu_->w = {0.0, 0.0, 0.0};
     initialize_variables();
   }
 
@@ -141,11 +144,11 @@ private:
   void initialize_variables()
   {
     laser_scan_ = std::make_shared<sensor_msgs::msg::LaserScan>();
-    laser_scan_->header.frame_id = "world";
+    laser_scan_->header.frame_id = "point_cloud";
     laser_scan_->time_increment = 0.0005592841189354658;
-    laser_scan_->angle_min = -M_PI / 2;
-    laser_scan_->angle_max = M_PI / 2;
-    laser_scan_->angle_increment = M_PI / 360;
+    laser_scan_->angle_min = -M_PI;
+    laser_scan_->angle_max = M_PI;
+    laser_scan_->angle_increment = M_PI / 180;
     laser_scan_->range_min = 0.01;
     laser_scan_->range_max = 100.0;
 
@@ -206,15 +209,19 @@ private:
       laser_scan_->angle_increment);
     std::fill(laser_scan->ranges.begin(), laser_scan->ranges.end(), 0.0);
 
-    for (const auto &point : cloud->points) {
-      float angle = std::atan2(point.y, point.x);
+    for (size_t i = 0; i < cloud->points.size(); i++) {
+      if (cloud->points.at(i).x <= 1e-6 && cloud->points.at(i).y <= 1e-6) {
+        cloud->points.erase(cloud->points.begin() + i);
+        continue;
+      }
+      float angle = std::atan2(cloud->points.at(i).y, cloud->points.at(i).x);
       if (angle < -M_PI || angle > M_PI) {
         continue;
       }
-      angle += M_PI / 2;
+      angle += M_PI;
       angle = normalize_angle(angle);
       size_t index = angle / laser_scan->angle_increment;
-      float distance = std::sqrt(point.x * point.x + point.y * point.y);
+      float distance = std::sqrt(cloud->points.at(i).x * cloud->points.at(i).x + cloud->points.at(i).y * cloud->points.at(i).y);
       if (index < 0 || index >= laser_scan->ranges.size()) {
         continue;
       }
@@ -286,77 +293,69 @@ private:
               if (pose_array_.poses.size() == 0) {
                 prev_position_ = Tco.translation();
                 prev_time_ = tImage;
+                prev_imu_ = std::make_shared<ORB_SLAM3::IMU::Point>(vImuMeas.back());
               } else {
                 // calculate linear velocity
                 Eigen::Vector3f velocity =
                   (Tco.translation() - prev_position_) / (tImage - prev_time_);
                 prev_position_ = Tco.translation();
                 prev_time_ = tImage;
+                prev_imu_ = std::make_shared<ORB_SLAM3::IMU::Point>(vImuMeas.back());
 
                 // calculate angular velocity
-                // Eigen::Quaternionf q1(Tco.unit_quaternion().w(),
-                //                       Tco.unit_quaternion().x(),
-                //                       Tco.unit_quaternion().y(),
-                //                       Tco.unit_quaternion().z());
-                // Eigen::Quaternionf q2(prev_orientation_.w(),
-                //                       prev_orientation_.x(),
-                //                       prev_orientation_.y(),
-                //                       prev_orientation_.z());
-                // Eigen::Quaternionf q_diff = q1 * q2.inverse();
-                // Eigen::Vector3f angular_velocity =
-                //   2 * std::acos(q_diff.w()) * q_diff.vec() /
-                //   std::sqrt(1 - q_diff.w() * q_diff.w());
-                // prev_orientation_ = Tco.unit_quaternion();
+                Eigen::Vector3f angular_velocity =
+                  (vImuMeas.back().w - prev_imu_->w) /
+                  (tImage - prev_imu_->t);
 
-                // nav_msgs::msg::Odometry odom;
-                // odom_msg_.header.stamp = get_clock()->now();
-                // odom_msg_.header.frame_id = "map";
-                // odom_msg_.child_frame_id = "odom";
-                // odom_msg_.pose.pose.position.x = Tco.translation().x();
-                // odom_msg_.pose.pose.position.y = Tco.translation().y();
-                // odom_msg_.pose.pose.position.z = Tco.translation().z();
-                // odom_msg_.pose.pose.orientation.x =
-                // Tco.unit_quaternion().x(); odom_msg_.pose.pose.orientation.y
-                // = Tco.unit_quaternion().y();
-                // odom_msg_.pose.pose.orientation.z =
-                // Tco.unit_quaternion().z(); odom_msg_.pose.pose.orientation.w
-                // = Tco.unit_quaternion().w(); odom_msg_.twist.twist.linear.x =
-                // velocity.x(); odom_msg_.twist.twist.linear.y = velocity.y();
-                // odom_msg_.twist.twist.linear.z = velocity.z();
-                // odom_msg_.twist.twist.angular.x = angular_velocity.x();
-                // odom_msg_.twist.twist.angular.y = angular_velocity.y();
-                // odom_msg_.twist.twist.angular.z = angular_velocity.z();
-                // odom_publisher_->publish(odom_msg_);
+                nav_msgs::msg::Odometry odom;
+                odom_msg_.header.stamp = get_clock()->now();
+                odom_msg_.header.frame_id = "map";
+                odom_msg_.child_frame_id = "odom";
+                odom_msg_.pose.pose.position.x = Tco.translation().x();
+                odom_msg_.pose.pose.position.y = Tco.translation().y();
+                odom_msg_.pose.pose.position.z = Tco.translation().z();
+                odom_msg_.pose.pose.orientation.x =
+                Tco.unit_quaternion().x(); odom_msg_.pose.pose.orientation.y
+                = Tco.unit_quaternion().y();
+                odom_msg_.pose.pose.orientation.z =
+                Tco.unit_quaternion().z(); odom_msg_.pose.pose.orientation.w
+                = Tco.unit_quaternion().w(); odom_msg_.twist.twist.linear.x =
+                velocity.x(); odom_msg_.twist.twist.linear.y = velocity.y();
+                odom_msg_.twist.twist.linear.z = velocity.z();
+                odom_msg_.twist.twist.angular.x = angular_velocity.x();
+                odom_msg_.twist.twist.angular.y = angular_velocity.y();
+                odom_msg_.twist.twist.angular.z = angular_velocity.z();
+                odom_publisher_->publish(odom_msg_);
               }
-              // geometry_msgs::msg::Pose pose;
-              // pose.position.x = Tco.translation().x();
-              // pose.position.y = Tco.translation().y();
+              geometry_msgs::msg::Pose pose;
+              pose.position.x = Tco.translation().x();
+              pose.position.y = Tco.translation().y();
               // pose.position.z = Tco.translation().z();
-              // pose.orientation.x = Tco.unit_quaternion().x();
-              // pose.orientation.y = Tco.unit_quaternion().y();
-              // pose.orientation.z = Tco.unit_quaternion().z();
-              // pose.orientation.w = Tco.unit_quaternion().w();
-              // pose_array_.header.stamp = get_clock()->now();
-              // pose_array_.poses.push_back(pose);
+              pose.orientation.x = Tco.unit_quaternion().x();
+              pose.orientation.y = Tco.unit_quaternion().y();
+              pose.orientation.z = Tco.unit_quaternion().z();
+              pose.orientation.w = Tco.unit_quaternion().w();
+              pose_array_.header.stamp = get_clock()->now();
+              pose_array_.poses.push_back(pose);
 
-              // geometry_msgs::msg::TransformStamped Tco_tf;
-              // Tco_tf.header.stamp = get_clock()->now();
-              // Tco_tf.header.frame_id = "map";
-              // Tco_tf.child_frame_id = "odom";
-              // Tco_tf.transform.translation.x = Tco.translation().x();
-              // Tco_tf.transform.translation.y = Tco.translation().y();
+              geometry_msgs::msg::TransformStamped Tco_tf;
+              Tco_tf.header.stamp = get_clock()->now();
+              Tco_tf.header.frame_id = "map";
+              Tco_tf.child_frame_id = "odom";
+              Tco_tf.transform.translation.x = Tco.translation().x();
+              Tco_tf.transform.translation.y = Tco.translation().y();
               // Tco_tf.transform.translation.z = Tco.translation().z();
-              // Tco_tf.transform.rotation.x = Tco.unit_quaternion().x();
-              // Tco_tf.transform.rotation.y = Tco.unit_quaternion().y();
-              // Tco_tf.transform.rotation.z = Tco.unit_quaternion().z();
-              // Tco_tf.transform.rotation.w = Tco.unit_quaternion().w();
-              // tf_broadcaster->sendTransform(Tco_tf);
+              Tco_tf.transform.rotation.x = Tco.unit_quaternion().x();
+              Tco_tf.transform.rotation.y = Tco.unit_quaternion().y();
+              Tco_tf.transform.rotation.z = Tco.unit_quaternion().z();
+              Tco_tf.transform.rotation.w = Tco.unit_quaternion().w();
+              tf_broadcaster->sendTransform(Tco_tf);
 
-              // geometry_msgs::msg::TransformStamped base_link_tf;
-              // base_link_tf.header.stamp = get_clock()->now();
-              // base_link_tf.header.frame_id = "odom";
-              // base_link_tf.child_frame_id = "base_link";
-              // tf_broadcaster->sendTransform(base_link_tf);
+              geometry_msgs::msg::TransformStamped base_link_tf;
+              base_link_tf.header.stamp = get_clock()->now();
+              base_link_tf.header.frame_id = "odom";
+              base_link_tf.child_frame_id = "base_link";
+              tf_broadcaster->sendTransform(base_link_tf);
 
               pcl::PointCloud<pcl::PointXYZ> new_pcl_cloud =
                 orb_slam3_system_->GetTrackedMapPointsPCL();
@@ -430,8 +429,8 @@ private:
       if (pose_array_.poses.size() > 1000) {
         pose_array_.poses.erase(pose_array_.poses.begin());
       }
-      // pose_array_.header.stamp = get_clock()->now();
-      // pose_array_publisher_->publish(pose_array_);
+      pose_array_.header.stamp = get_clock()->now();
+      pose_array_publisher_->publish(pose_array_);
 
       // odom_publisher_->publish(odom_msg_);
       tracked_point_cloud2_publisher_->publish(tracked_point_cloud2_);
@@ -502,6 +501,7 @@ private:
   std::shared_ptr<ORB_SLAM3::IMU::Point> initial_orientation;
   Eigen::Vector3f prev_position_;
   Eigen::Quaternionf prev_orientation_;
+  std::shared_ptr<ORB_SLAM3::IMU::Point> prev_imu_;
   double prev_time_;
 };
 

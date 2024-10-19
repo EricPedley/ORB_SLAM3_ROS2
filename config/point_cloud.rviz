@@ -7,7 +7,6 @@ Panels:
         - /Global Options1
         - /Status1
         - /LaserScan1
-        - /LaserScan1/Status1
         - /LaserScan1/Topic1
         - /PointCloud22
       Splitter Ratio: 0.5
@@ -207,6 +206,29 @@ Visualization Manager:
       Use Fixed Frame: true
       Use rainbow: true
       Value: false
+    - Class: rviz_default_plugins/TF
+      Enabled: true
+      Frame Timeout: 15
+      Frames:
+        All Enabled: true
+        map:
+          Value: true
+        point_cloud:
+          Value: true
+        world:
+          Value: true
+      Marker Scale: 1
+      Name: TF
+      Show Arrows: true
+      Show Axes: true
+      Show Names: true
+      Tree:
+        world:
+          map:
+            point_cloud:
+              {}
+      Update Interval: 0
+      Value: true
   Enabled: true
   Global Options:
     Background Color: 48; 48; 48
@@ -253,7 +275,7 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz_default_plugins/Orbit
-      Distance: 36.20383071899414
+      Distance: 23.412513732910156
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
@@ -268,10 +290,10 @@ Visualization Manager:
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Pitch: 1.1754015684127808
+      Pitch: 1.15040123462677
       Target Frame: <Fixed Frame>
       Value: Orbit (rviz)
-      Yaw: 0.5585490465164185
+      Yaw: 0.7685487866401672
     Saved: ~
 Window Geometry:
   Displays:

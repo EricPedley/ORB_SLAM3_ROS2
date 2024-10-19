@@ -1,6 +1,8 @@
 import os
 from datetime import datetime
 
+from ament_index_python.packages import get_package_share_directory
+
 from launch import LaunchDescription
 from launch_ros.actions import Node
 from launch.substitutions import (
@@ -111,7 +113,7 @@ def generate_launch_description():
                 package="orb_slam3_ros2",
                 executable="imu_mono_node_cpp",
                 output="screen",
-                # prefix="xterm -e gdb --args",
+                prefix="xterm -e gdb --args",
                 parameters=[
                     {
                         "sensor_type": LaunchConfiguration("sensor_type"),
@@ -133,17 +135,20 @@ def generate_launch_description():
             #     ],
             #     remappings=[("cloud_in", "orb_point_cloud2")],
             # ),
-            # Node(
-            #     package="slam_toolbox",
-            #     executable="async_slam_toolbox_node",
-            #     output="screen",
-            #     parameters=[
-            #         {
-            #             "slam_params_file": LaunchConfiguration("slam_params_file"),
-            #             "use_sim_time": True,
-            #         }
-            #     ],
-            # ),
+            Node(
+                package="slam_toolbox",
+                executable="async_slam_toolbox_node",
+                output="screen",
+                parameters=[
+                    os.path.join(get_package_share_directory('orb_slam3_ros2'), 'config', 'mapper_params_online_async.yaml'),
+                    {
+                        "use_sim_time": True,
+                        "transform_publish_period": 1.0,
+                        "debug_logging:": True,
+                    }
+                ],
+                arguments=['--ros-args', '--log-level', 'DEBUG'],
+            ),
             Node(
                 package="tf2_ros",
                 executable="static_transform_publisher",
