@@ -133,17 +133,17 @@ def generate_launch_description():
             #     ],
             #     remappings=[("cloud_in", "orb_point_cloud2")],
             # ),
-            Node(
-                package="slam_toolbox",
-                executable="async_slam_toolbox_node",
-                output="screen",
-                parameters=[
-                    {
-                        "slam_params_file": LaunchConfiguration("slam_params_file"),
-                        "use_sim_time": True,
-                    }
-                ],
-            ),
+            # Node(
+            #     package="slam_toolbox",
+            #     executable="async_slam_toolbox_node",
+            #     output="screen",
+            #     parameters=[
+            #         {
+            #             "slam_params_file": LaunchConfiguration("slam_params_file"),
+            #             "use_sim_time": True,
+            #         }
+            #     ],
+            # ),
             Node(
                 package="tf2_ros",
                 executable="static_transform_publisher",

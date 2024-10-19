@@ -309,61 +309,57 @@ private:
                 // prev_orientation_ = Tco.unit_quaternion();
 
                 // nav_msgs::msg::Odometry odom;
-                odom_msg_.header.stamp = get_clock()->now();
-                odom_msg_.header.frame_id = "map";
-                odom_msg_.child_frame_id = "odom";
-                odom_msg_.pose.pose.position.x = Tco.translation().x();
-                odom_msg_.pose.pose.position.y = Tco.translation().y();
-                odom_msg_.pose.pose.position.z = Tco.translation().z();
-                odom_msg_.pose.pose.orientation.x = Tco.unit_quaternion().x();
-                odom_msg_.pose.pose.orientation.y = Tco.unit_quaternion().y();
-                odom_msg_.pose.pose.orientation.z = Tco.unit_quaternion().z();
-                odom_msg_.pose.pose.orientation.w = Tco.unit_quaternion().w();
-                odom_msg_.twist.twist.linear.x = velocity.x();
-                odom_msg_.twist.twist.linear.y = velocity.y();
-                odom_msg_.twist.twist.linear.z = velocity.z();
+                // odom_msg_.header.stamp = get_clock()->now();
+                // odom_msg_.header.frame_id = "map";
+                // odom_msg_.child_frame_id = "odom";
+                // odom_msg_.pose.pose.position.x = Tco.translation().x();
+                // odom_msg_.pose.pose.position.y = Tco.translation().y();
+                // odom_msg_.pose.pose.position.z = Tco.translation().z();
+                // odom_msg_.pose.pose.orientation.x =
+                // Tco.unit_quaternion().x(); odom_msg_.pose.pose.orientation.y
+                // = Tco.unit_quaternion().y();
+                // odom_msg_.pose.pose.orientation.z =
+                // Tco.unit_quaternion().z(); odom_msg_.pose.pose.orientation.w
+                // = Tco.unit_quaternion().w(); odom_msg_.twist.twist.linear.x =
+                // velocity.x(); odom_msg_.twist.twist.linear.y = velocity.y();
+                // odom_msg_.twist.twist.linear.z = velocity.z();
                 // odom_msg_.twist.twist.angular.x = angular_velocity.x();
                 // odom_msg_.twist.twist.angular.y = angular_velocity.y();
                 // odom_msg_.twist.twist.angular.z = angular_velocity.z();
                 // odom_publisher_->publish(odom_msg_);
               }
-              geometry_msgs::msg::Pose pose;
-              pose.position.x = Tco.translation().x();
-              pose.position.y = Tco.translation().y();
-              pose.position.z = Tco.translation().z();
-              pose.orientation.x = Tco.unit_quaternion().x();
-              pose.orientation.y = Tco.unit_quaternion().y();
-              pose.orientation.z = Tco.unit_quaternion().z();
-              pose.orientation.w = Tco.unit_quaternion().w();
-              pose_array_.header.stamp = get_clock()->now();
-              pose_array_.poses.push_back(pose);
+              // geometry_msgs::msg::Pose pose;
+              // pose.position.x = Tco.translation().x();
+              // pose.position.y = Tco.translation().y();
+              // pose.position.z = Tco.translation().z();
+              // pose.orientation.x = Tco.unit_quaternion().x();
+              // pose.orientation.y = Tco.unit_quaternion().y();
+              // pose.orientation.z = Tco.unit_quaternion().z();
+              // pose.orientation.w = Tco.unit_quaternion().w();
+              // pose_array_.header.stamp = get_clock()->now();
+              // pose_array_.poses.push_back(pose);
 
-              geometry_msgs::msg::TransformStamped Tco_tf;
-              Tco_tf.header.stamp = get_clock()->now();
-              Tco_tf.header.frame_id = "map";
-              Tco_tf.child_frame_id = "odom";
-              Tco_tf.transform.translation.x = Tco.translation().x();
-              Tco_tf.transform.translation.y = Tco.translation().y();
-              Tco_tf.transform.translation.z = Tco.translation().z();
+              // geometry_msgs::msg::TransformStamped Tco_tf;
+              // Tco_tf.header.stamp = get_clock()->now();
+              // Tco_tf.header.frame_id = "map";
+              // Tco_tf.child_frame_id = "odom";
+              // Tco_tf.transform.translation.x = Tco.translation().x();
+              // Tco_tf.transform.translation.y = Tco.translation().y();
+              // Tco_tf.transform.translation.z = Tco.translation().z();
               // Tco_tf.transform.rotation.x = Tco.unit_quaternion().x();
               // Tco_tf.transform.rotation.y = Tco.unit_quaternion().y();
               // Tco_tf.transform.rotation.z = Tco.unit_quaternion().z();
               // Tco_tf.transform.rotation.w = Tco.unit_quaternion().w();
-              tf_broadcaster->sendTransform(Tco_tf);
+              // tf_broadcaster->sendTransform(Tco_tf);
 
-              geometry_msgs::msg::TransformStamped base_link_tf;
-              base_link_tf.header.stamp = get_clock()->now();
-              base_link_tf.header.frame_id = "odom";
-              base_link_tf.child_frame_id = "base_link";
-              tf_broadcaster->sendTransform(base_link_tf);
-
-              geometry_msgs::msg::TransformStamped scan_tf;
-              scan_tf.header.stamp = get_clock()->now();
-              scan_tf.header.frame_id = "odom";
-              scan_tf.child_frame_id = "scan";
+              // geometry_msgs::msg::TransformStamped base_link_tf;
+              // base_link_tf.header.stamp = get_clock()->now();
+              // base_link_tf.header.frame_id = "odom";
+              // base_link_tf.child_frame_id = "base_link";
+              // tf_broadcaster->sendTransform(base_link_tf);
 
               pcl::PointCloud<pcl::PointXYZ> new_pcl_cloud =
-                orb_slam3_system_->GetMapPCL();
+                orb_slam3_system_->GetTrackedMapPointsPCL();
               pcl::PointCloud<pcl::PointXYZ>::Ptr new_pcl_cloud_ptr(
                 new pcl::PointCloud<pcl::PointXYZ>(new_pcl_cloud));
               point_cloud_to_laser_scan(new_pcl_cloud_ptr, laser_scan_);
@@ -375,13 +371,11 @@ private:
 
               point_cloud2_.header.frame_id = "point_cloud";
               point_cloud2_.header.stamp = get_clock()->now();
-              point_cloud2_publisher_->publish(point_cloud2_);
 
               tracked_point_cloud2_.header.frame_id = "point_cloud";
               tracked_point_cloud2_.header.stamp = get_clock()->now();
 
               laser_scan_->header.stamp = get_clock()->now();
-              laser_scan_publisher_->publish(*laser_scan_);
             }
           }
         }
@@ -436,11 +430,13 @@ private:
       if (pose_array_.poses.size() > 1000) {
         pose_array_.poses.erase(pose_array_.poses.begin());
       }
-      pose_array_.header.stamp = get_clock()->now();
-      pose_array_publisher_->publish(pose_array_);
+      // pose_array_.header.stamp = get_clock()->now();
+      // pose_array_publisher_->publish(pose_array_);
 
-      odom_publisher_->publish(odom_msg_);
+      // odom_publisher_->publish(odom_msg_);
       tracked_point_cloud2_publisher_->publish(tracked_point_cloud2_);
+      point_cloud2_publisher_->publish(point_cloud2_);
+      laser_scan_publisher_->publish(*laser_scan_);
 
       // Two_tf.transform.translation.x = Two.translation().x();
       // Two_tf.transform.translation.y = Two.translation().y();
