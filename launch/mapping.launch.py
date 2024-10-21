@@ -9,9 +9,11 @@ from launch.substitutions import (
     LaunchConfiguration,
     PathJoinSubstitution,
     PythonExpression,
+    Command,
 )
-from launch_ros.substitutions import FindPackageShare
-from launch.conditions import IfCondition, UnlessCondition
+from launch.conditions import IfCondition
+from launch_ros.descriptions import ParameterValue
+from launch_ros.substitutions import FindPackageShare, ExecutableInPackage
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.actions import (
     DeclareLaunchArgument,
@@ -38,7 +40,9 @@ def generate_launch_description():
             DeclareLaunchArgument(
                 "playback_bag",
                 default_value="changeme",
-                description="The rosbag to play during execution. If set, the realsense2_camera node will not launch. Otherwise, nothing will happen.",
+                description="The rosbag to play during execution. If set, the \
+                realsense2_camera node will not launch. Otherwise, nothing\
+                will happen.",
             ),
             DeclareLaunchArgument(
                 "record_bag",
@@ -48,7 +52,9 @@ def generate_launch_description():
             DeclareLaunchArgument(
                 "bag_name",
                 default_value=bag_name,
-                description="The name of the bag if record_bag is true. By default, the name of the bag will be ORB_SLAM3_YYYY-MM-DD_HH-mm-ss",
+                description="The name of the bag if record_bag is true. By\
+                        default, the name of the bag will be\
+                        ORB_SLAM3_YYYY-MM-DD_HH-mm-ss",
             ),
             DeclareLaunchArgument(
                 "slam_params_file",
@@ -59,7 +65,8 @@ def generate_launch_description():
                         "mapper_params_online_async.yaml",
                     ],
                 ),
-                description="Full path to the ROS2 parameters file to use for the slam_toolbox node",
+                description="Full path to the ROS2 parameters file to use for\
+                        the slam_toolbox node",
             ),
             IncludeLaunchDescription(
                 PythonLaunchDescriptionSource(
@@ -81,7 +88,11 @@ def generate_launch_description():
                 }.items(),
                 condition=IfCondition(
                     PythonExpression(
-                        ["'", LaunchConfiguration("playback_bag"), "' == 'changeme'"]
+                        [
+                            "'",
+                            LaunchConfiguration("playback_bag"),
+                            "' == 'changeme'",
+                        ]
                     )
                 ),
             ),
@@ -113,7 +124,7 @@ def generate_launch_description():
                 package="orb_slam3_ros2",
                 executable="imu_mono_node_cpp",
                 output="screen",
-                prefix="xterm -e gdb --args",
+                # prefix="xterm -e gdb --args",
                 parameters=[
                     {
                         "sensor_type": LaunchConfiguration("sensor_type"),
@@ -133,21 +144,51 @@ def generate_launch_description():
             #             # "filter_ground_plane": True,
             #         }
             #     ],
-            #     remappings=[("cloud_in", "orb_point_cloud2")],
+            #     remappings=[("cloud_in", "orb_point_cloud2"),
+            #                 ("projected_map", "map")],
             # ),
             Node(
                 package="slam_toolbox",
                 executable="async_slam_toolbox_node",
                 output="screen",
                 parameters=[
-                    os.path.join(get_package_share_directory('orb_slam3_ros2'), 'config', 'mapper_params_online_async.yaml'),
+                    os.path.join(
+                        get_package_share_directory("orb_slam3_ros2"),
+                        "config",
+                        "mapper_params_online_async.yaml",
+                    ),
                     {
                         "use_sim_time": True,
-                        "transform_publish_period": 1.0,
-                        "debug_logging:": True,
+                    },
+                ],
+                # arguments=["--ros-args", "--log-level", "DEBUG"],
+            ),
+            Node(
+                package="robot_state_publisher",
+                executable="robot_state_publisher",
+                output="screen",
+                parameters=[
+                    {
+                        "robot_description": ParameterValue(
+                            Command(
+                                [
+                                    "xacro",
+                                    " ",
+                                    PathJoinSubstitution(
+                                        [
+                                            FindPackageShare(
+                                                "realsense2_description"
+                                            ),
+                                            "urdf",
+                                            "test_d435i_camera.urdf.xacro",
+                                        ]
+                                    ),
+                                ]
+                            ),
+                            value_type=str,
+                        ),
                     }
                 ],
-                arguments=['--ros-args', '--log-level', 'DEBUG'],
             ),
             Node(
                 package="tf2_ros",
@@ -186,7 +227,11 @@ def generate_launch_description():
                 shell=True,
                 condition=IfCondition(
                     PythonExpression(
-                        ["'", LaunchConfiguration("playback_bag"), "' != 'changeme'"]
+                        [
+                            "'",
+                            LaunchConfiguration("playback_bag"),
+                            "' != 'changeme'",
+                        ]
                     )
                 ),
             ),

@@ -371,6 +371,12 @@ private:
               Tco_tf.transform.rotation.w = Tco.unit_quaternion().w();
               tf_broadcaster->sendTransform(Tco_tf);
 
+              geometry_msgs::msg::TransformStamped base_link_tf;
+              base_link_tf.header.stamp = get_clock()->now();
+              base_link_tf.header.frame_id = "odom";
+              base_link_tf.child_frame_id = "base_link";
+              tf_broadcaster->sendTransform(base_link_tf);
+
               // pcl::PointCloud<pcl::PointXYZ> new_pcl_cloud =
               //   orb_slam3_system_->GetTrackedMapPointsPCL();
 
@@ -420,42 +426,44 @@ private:
         }
 
         if (!inertial_ba1_ && orb_slam3_system_->GetInertialBA1()) {
+          RCLCPP_INFO(get_logger(), "Inertial BA1 started");
           inertial_ba1_ = true;
           accumulated_pcl_cloud_ = orb_slam3_system_->GetMapPCL();
           frame_pcl_cloud_.clear();
           pose_array_.poses.clear();
           pose_array_.header.stamp = get_clock()->now();
-          for (const auto &pose : orb_slam3_system_->GetTcoPoses()) {
-            geometry_msgs::msg::Pose pose_msg;
-            pose_msg.position.x = pose.translation().x();
-            pose_msg.position.y = pose.translation().y();
-            pose_msg.position.z = pose.translation().z();
-            pose_msg.orientation.x = pose.unit_quaternion().x();
-            pose_msg.orientation.y = pose.unit_quaternion().y();
-            pose_msg.orientation.z = pose.unit_quaternion().z();
-            pose_msg.orientation.w = pose.unit_quaternion().w();
-            pose_array_.poses.push_back(pose_msg);
-          }
+          // for (const auto &pose : orb_slam3_system_->GetTcoPoses()) {
+          //   geometry_msgs::msg::Pose pose_msg;
+          //   pose_msg.position.x = pose.translation().x();
+          //   pose_msg.position.y = pose.translation().y();
+          //   pose_msg.position.z = pose.translation().z();
+          //   pose_msg.orientation.x = pose.unit_quaternion().x();
+          //   pose_msg.orientation.y = pose.unit_quaternion().y();
+          //   pose_msg.orientation.z = pose.unit_quaternion().z();
+          //   pose_msg.orientation.w = pose.unit_quaternion().w();
+          //   pose_array_.poses.push_back(pose_msg);
+          // }
           RCLCPP_INFO(get_logger(), "Inertial BA1 complete");
         }
 
         if (!inertial_ba2_ && orb_slam3_system_->GetInertialBA2()) {
+          RCLCPP_INFO(get_logger(), "Inertial BA2 started");
           inertial_ba2_ = true;
           accumulated_pcl_cloud_ = orb_slam3_system_->GetMapPCL();
           frame_pcl_cloud_.clear();
           pose_array_.poses.clear();
           pose_array_.header.stamp = get_clock()->now();
-          for (const auto &pose : orb_slam3_system_->GetTcoPoses()) {
-            geometry_msgs::msg::Pose pose_msg;
-            pose_msg.position.x = pose.translation().x();
-            pose_msg.position.y = pose.translation().y();
-            pose_msg.position.z = pose.translation().z();
-            pose_msg.orientation.x = pose.unit_quaternion().x();
-            pose_msg.orientation.y = pose.unit_quaternion().y();
-            pose_msg.orientation.z = pose.unit_quaternion().z();
-            pose_msg.orientation.w = pose.unit_quaternion().w();
-            pose_array_.poses.push_back(pose_msg);
-          }
+          // for (const auto &pose : orb_slam3_system_->GetTcoPoses()) {
+          //   geometry_msgs::msg::Pose pose_msg;
+          //   pose_msg.position.x = pose.translation().x();
+          //   pose_msg.position.y = pose.translation().y();
+          //   pose_msg.position.z = pose.translation().z();
+          //   pose_msg.orientation.x = pose.unit_quaternion().x();
+          //   pose_msg.orientation.y = pose.unit_quaternion().y();
+          //   pose_msg.orientation.z = pose.unit_quaternion().z();
+          //   pose_msg.orientation.w = pose.unit_quaternion().w();
+          //   pose_array_.poses.push_back(pose_msg);
+          // }
           RCLCPP_INFO(get_logger(), "Inertial BA2 complete");
         }
       } catch (const std::exception &e) {

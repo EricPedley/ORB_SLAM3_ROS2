@@ -10,12 +10,12 @@ slam_toolbox:
     # ROS Parameters
     odom_frame: odom
     map_frame: map
-    base_frame: base_footprint
+    base_frame: odom
     scan_topic: /scan
     mode: localization # mapping
 
     # if you'd like to start localizing on bringup in a map and pose
-    map_file_name: test_steve
+    map_file_name: test
     map_start_pose: [0.0, 0.0, 0.0]
 
     debug_logging: false
