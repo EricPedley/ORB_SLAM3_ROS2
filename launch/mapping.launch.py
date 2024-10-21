@@ -26,6 +26,16 @@ def generate_launch_description():
     return LaunchDescription(
         [
             DeclareLaunchArgument(
+                "ip_address",
+                default_value="172.17.0.3",
+                description="The IP address of the luci docker container",
+            ),
+            DeclareLaunchArgument(
+                "remote_launch",
+                default_value="false",
+                description="Whether or not to launch the luci launch file on the docker container",
+            ),
+            DeclareLaunchArgument(
                 "sensor_type",
                 default_value="imu-monocular",
                 description="The mode which ORB_SLAM3 will run in.",
@@ -121,34 +131,39 @@ def generate_launch_description():
                     }
                 ],
             ),
-            # Node(
-            #     package="octomap_server",
-            #     executable="octomap_server_node",
-            #     output="screen",
-            #     parameters=[
-            #         {
-            #             "resolution": 0.05,
-            #             "frame_id": "map",
-            #             "sensor_model.max_range": 100.0,
-            #             # "filter_ground_plane": True,
-            #         }
-            #     ],
-            #     remappings=[("cloud_in", "orb_point_cloud2")],
-            # ),
             Node(
-                package="slam_toolbox",
-                executable="async_slam_toolbox_node",
+                package="octomap_server",
+                executable="octomap_server_node",
                 output="screen",
                 parameters=[
-                    os.path.join(get_package_share_directory('orb_slam3_ros2'), 'config', 'mapper_params_online_async.yaml'),
                     {
-                        "use_sim_time": True,
-                        "transform_publish_period": 1.0,
-                        "debug_logging:": True,
+                        "resolution": 0.05,
+                        "frame_id": "map",
+                        "sensor_model.max_range": 100.0,
+                        # "filter_ground_plane": True,
                     }
                 ],
-                arguments=['--ros-args', '--log-level', 'DEBUG'],
+                remappings=[("cloud_in", "tracked_point_cloud2"),
+                            ("projected_map", "map"),],
             ),
+            # Node(
+            #     package="slam_toolbox",
+            #     executable="async_slam_toolbox_node",
+            #     output="screen",
+            #     parameters=[
+            #         os.path.join(
+            #             get_package_share_directory("orb_slam3_ros2"),
+            #             "config",
+            #             "mapper_params_online_async.yaml",
+            #         ),
+            #         {
+            #             "use_sim_time": True,
+            #             "transform_publish_period": 1.0,
+            #             "debug_logging:": True,
+            #         },
+            #     ],
+            #     arguments=["--ros-args", "--log-level", "DEBUG"],
+            # ),
             Node(
                 package="tf2_ros",
                 executable="static_transform_publisher",
@@ -169,6 +184,19 @@ def generate_launch_description():
                         ]
                     ),
                 ],
+            ),
+            ExecuteProcess(
+                cmd=[
+                    "ssh",
+                    ["root@", LaunchConfiguration("ip_address")],
+                    'echo "ros2 launch awl_navigation slam_toolbox.launch.py"',
+                ],
+                output="screen",
+                condition=IfCondition(
+                    PythonExpression(
+                        ["'", LaunchConfiguration("remote_launch"), "' == 'true'"]
+                    )
+                ),
             ),
             ExecuteProcess(
                 cmd=[
