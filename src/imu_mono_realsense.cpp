@@ -162,8 +162,8 @@ private:
     laser_scan_->time_increment = 0.0;
     laser_scan_->angle_min = -M_PI;
     laser_scan_->angle_max = M_PI;
-    laser_scan_->angle_increment = M_PI / 180;
-    laser_scan_->range_min = 0.01;
+    laser_scan_->angle_increment = M_PI / 180.0;
+    laser_scan_->range_min = 0.00;
     laser_scan_->range_max = 100.0;
 
     pose_array_ = geometry_msgs::msg::PoseArray();
