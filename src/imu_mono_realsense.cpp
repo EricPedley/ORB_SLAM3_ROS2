@@ -44,9 +44,7 @@ public:
     : Node("imu_mono_realsense"),
       vocabulary_file_path(std::string(PROJECT_PATH) +
                            "/ORB_SLAM3/Vocabulary/ORBvoc.txt"),
-      is_imu_initialized_(false),
-      inertial_ba1_(false),
-      inertial_ba2_(false)
+      is_imu_initialized_(false), inertial_ba1_(false), inertial_ba2_(false)
   {
 
     // declare parameters
@@ -132,7 +130,8 @@ public:
 
     // create clients
     octomap_server_client_ = create_client<std_srvs::srv::Empty>(
-      "octomap_server/reset", rmw_qos_profile_services_default, octomap_server_client_callback_group_);
+      "octomap_server/reset", rmw_qos_profile_services_default,
+      octomap_server_client_callback_group_);
 
     // tf broadcaster
     tf_broadcaster = std::make_unique<tf2_ros::TransformBroadcaster>(*this);
@@ -305,8 +304,9 @@ private:
             if (orb_slam3_system_->isImuInitialized() ||
                 orb_slam3_system_->GetInertialBA1() ||
                 orb_slam3_system_->GetInertialBA2()) {
-              auto Two = orb_slam3_system_->GetCurrentPoseImu();
-              auto Tco = Two * Tcw.inverse();
+              auto Tcb = orb_slam3_system_->GetCurrentPoseImu();
+              // auto Tco = Two * Tcw.inverse();
+              auto Tco = Tcw.inverse() * Tcb;
               if (pose_array_.poses.size() == 0) {
                 prev_position_ = Tco.translation();
                 prev_time_ = tImage;
@@ -371,6 +371,20 @@ private:
               Tco_tf.transform.rotation.w = Tco.unit_quaternion().w();
               tf_broadcaster->sendTransform(Tco_tf);
 
+              geometry_msgs::msg::TransformStamped base_link_tf;
+              base_link_tf.header.stamp = get_clock()->now();
+              base_link_tf.header.frame_id = "odom";
+              base_link_tf.child_frame_id = "base_link";
+              tf_broadcaster->sendTransform(base_link_tf);
+
+              geometry_msgs::msg::TransformStamped t;
+              t.header.stamp = get_clock()->now();
+              t.header.frame_id = "map";
+              t.child_frame_id = "point_cloud";
+
+              t.transform.translation.z = 2;
+              tf_broadcaster->sendTransform(t);
+
               // pcl::PointCloud<pcl::PointXYZ> new_pcl_cloud =
               //   orb_slam3_system_->GetTrackedMapPointsPCL();
 
@@ -380,7 +394,8 @@ private:
               //   std::make_shared<pcl::PointCloud<pcl::PointXYZ>>(new_pcl_cloud);
               //
               pcl::PointCloud<pcl::PointXYZ>::Ptr frame_ptr =
-                std::make_shared<pcl::PointCloud<pcl::PointXYZ>>(frame_pcl_cloud_);
+                std::make_shared<pcl::PointCloud<pcl::PointXYZ>>(
+                  frame_pcl_cloud_);
 
               point_cloud_to_laser_scan(frame_ptr, laser_scan_);
 
@@ -419,45 +434,45 @@ private:
           }
         }
 
-        if (!inertial_ba1_ && orb_slam3_system_->GetInertialBA1()) {
-          inertial_ba1_ = true;
-          accumulated_pcl_cloud_ = orb_slam3_system_->GetMapPCL();
-          frame_pcl_cloud_.clear();
-          pose_array_.poses.clear();
-          pose_array_.header.stamp = get_clock()->now();
-          for (const auto &pose : orb_slam3_system_->GetTcoPoses()) {
-            geometry_msgs::msg::Pose pose_msg;
-            pose_msg.position.x = pose.translation().x();
-            pose_msg.position.y = pose.translation().y();
-            pose_msg.position.z = pose.translation().z();
-            pose_msg.orientation.x = pose.unit_quaternion().x();
-            pose_msg.orientation.y = pose.unit_quaternion().y();
-            pose_msg.orientation.z = pose.unit_quaternion().z();
-            pose_msg.orientation.w = pose.unit_quaternion().w();
-            pose_array_.poses.push_back(pose_msg);
-          }
-          RCLCPP_INFO(get_logger(), "Inertial BA1 complete");
-        }
-
-        if (!inertial_ba2_ && orb_slam3_system_->GetInertialBA2()) {
-          inertial_ba2_ = true;
-          accumulated_pcl_cloud_ = orb_slam3_system_->GetMapPCL();
-          frame_pcl_cloud_.clear();
-          pose_array_.poses.clear();
-          pose_array_.header.stamp = get_clock()->now();
-          for (const auto &pose : orb_slam3_system_->GetTcoPoses()) {
-            geometry_msgs::msg::Pose pose_msg;
-            pose_msg.position.x = pose.translation().x();
-            pose_msg.position.y = pose.translation().y();
-            pose_msg.position.z = pose.translation().z();
-            pose_msg.orientation.x = pose.unit_quaternion().x();
-            pose_msg.orientation.y = pose.unit_quaternion().y();
-            pose_msg.orientation.z = pose.unit_quaternion().z();
-            pose_msg.orientation.w = pose.unit_quaternion().w();
-            pose_array_.poses.push_back(pose_msg);
-          }
-          RCLCPP_INFO(get_logger(), "Inertial BA2 complete");
-        }
+        // if (!inertial_ba1_ && orb_slam3_system_->GetInertialBA1()) {
+        //   inertial_ba1_ = true;
+        //   accumulated_pcl_cloud_ = orb_slam3_system_->GetMapPCL();
+        //   frame_pcl_cloud_.clear();
+        //   pose_array_.poses.clear();
+        //   pose_array_.header.stamp = get_clock()->now();
+        //   for (const auto &pose : orb_slam3_system_->GetTcoPoses()) {
+        //     geometry_msgs::msg::Pose pose_msg;
+        //     pose_msg.position.x = pose.translation().x();
+        //     pose_msg.position.y = pose.translation().y();
+        //     pose_msg.position.z = pose.translation().z();
+        //     pose_msg.orientation.x = pose.unit_quaternion().x();
+        //     pose_msg.orientation.y = pose.unit_quaternion().y();
+        //     pose_msg.orientation.z = pose.unit_quaternion().z();
+        //     pose_msg.orientation.w = pose.unit_quaternion().w();
+        //     pose_array_.poses.push_back(pose_msg);
+        //   }
+        //   RCLCPP_INFO(get_logger(), "Inertial BA1 complete");
+        // }
+        //
+        // if (!inertial_ba2_ && orb_slam3_system_->GetInertialBA2()) {
+        //   inertial_ba2_ = true;
+        //   accumulated_pcl_cloud_ = orb_slam3_system_->GetMapPCL();
+        //   frame_pcl_cloud_.clear();
+        //   pose_array_.poses.clear();
+        //   pose_array_.header.stamp = get_clock()->now();
+        //   for (const auto &pose : orb_slam3_system_->GetTcoPoses()) {
+        //     geometry_msgs::msg::Pose pose_msg;
+        //     pose_msg.position.x = pose.translation().x();
+        //     pose_msg.position.y = pose.translation().y();
+        //     pose_msg.position.z = pose.translation().z();
+        //     pose_msg.orientation.x = pose.unit_quaternion().x();
+        //     pose_msg.orientation.y = pose.unit_quaternion().y();
+        //     pose_msg.orientation.z = pose.unit_quaternion().z();
+        //     pose_msg.orientation.w = pose.unit_quaternion().w();
+        //     pose_array_.poses.push_back(pose_msg);
+        //   }
+        //   RCLCPP_INFO(get_logger(), "Inertial BA2 complete");
+        // }
       } catch (const std::exception &e) {
         RCLCPP_ERROR(get_logger(), "SLAM processing exception: %s", e.what());
       }
@@ -485,13 +500,6 @@ private:
   void timer_callback()
   {
     unique_lock<mutex> lock(orbslam3_mutex_);
-    geometry_msgs::msg::TransformStamped t;
-    t.header.stamp = get_clock()->now();
-    t.header.frame_id = "map";
-    t.child_frame_id = "point_cloud";
-
-    t.transform.translation.z = 2;
-    tf_broadcaster->sendTransform(t);
 
     geometry_msgs::msg::Pose pose;
     if (orb_slam3_system_->isImuInitialized() ||
