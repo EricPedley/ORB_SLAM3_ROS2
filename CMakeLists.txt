@@ -36,6 +36,8 @@ find_package(apriltag_ros REQUIRED)
 find_package(apriltag_msgs REQUIRED)
 find_package(cv_bridge REQUIRED)
 find_package(OpenCV 4.4 REQUIRED)
+find_package(realsense2_description REQUIRED)
+find_package(xacro REQUIRED)
 # find_package(Eigen3 3.3 REQUIRED) # Matched with Sophus
 find_package(Sophus REQUIRED)
 find_package(Pangolin REQUIRED)
@@ -173,6 +175,16 @@ install(
 install(
   DIRECTORY config/
   DESTINATION share/${PROJECT_NAME}/config
+)
+
+install(
+    DIRECTORY urdf/
+    DESTINATION share/${PROJECT_NAME}/urdf
+)
+
+install(
+    DIRECTORY meshes/
+    DESTINATION share/${PROJECT_NAME}/meshes
 )
 
 # install video files
