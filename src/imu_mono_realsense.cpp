@@ -14,8 +14,8 @@
 #include <sensor_msgs/msg/laser_scan.hpp>
 #include <sensor_msgs/msg/point_cloud.hpp>
 #include <std_srvs/srv/empty.hpp>
-#include <tf2_ros/transform_broadcaster.h>
 #include <tf2/LinearMath/Quaternion.h>
+#include <tf2_ros/transform_broadcaster.h>
 
 #include <sstream>
 
@@ -157,7 +157,7 @@ private:
   void initialize_variables()
   {
     laser_scan_ = std::make_shared<sensor_msgs::msg::LaserScan>();
-    laser_scan_->header.frame_id = "point_cloud";
+    laser_scan_->header.frame_id = "scan";
     laser_scan_->scan_time = 0.0;
     laser_scan_->time_increment = 0.0;
     laser_scan_->angle_min = -M_PI;
@@ -350,10 +350,9 @@ private:
                 // odom_publisher_->publish(odom_msg_);
               }
 
-              tf2::Quaternion q_orig(Twc.unit_quaternion().x(),
-                  Twc.unit_quaternion().y(),
-                  Twc.unit_quaternion().z(),
-                  Twc.unit_quaternion().w());
+              tf2::Quaternion q_orig(
+                Twc.unit_quaternion().x(), Twc.unit_quaternion().y(),
+                Twc.unit_quaternion().z(), Twc.unit_quaternion().w());
 
               tf2::Quaternion q_rot_x, q_rot_z;
               // q_rot_x.setRPY(M_PI / 2.0, 0, 0);
@@ -372,6 +371,15 @@ private:
               pose.orientation.w = q_combined.w();
               pose_array_.header.stamp = get_clock()->now();
               pose_array_.poses.push_back(pose);
+
+              geometry_msgs::msg::TransformStamped scan_tf;
+              scan_tf.header.stamp = get_clock()->now();
+              scan_tf.header.frame_id = "point_cloud";
+              scan_tf.child_frame_id = "scan";
+              scan_tf.transform.translation.x = Twc.translation().x();
+              scan_tf.transform.translation.y = Twc.translation().y();
+              tf_broadcaster->sendTransform(scan_tf);
+
 
               geometry_msgs::msg::TransformStamped Twc_tf;
               Twc_tf.header.stamp = get_clock()->now();
@@ -403,7 +411,7 @@ private:
               // pcl::PointCloud<pcl::PointXYZ> new_pcl_cloud =
               //   orb_slam3_system_->GetTrackedMapPointsPCL();
 
-              frame_pcl_cloud_ = orb_slam3_system_->GetTrackedMapPointsPCL();
+              frame_pcl_cloud_ = orb_slam3_system_->GetTrackedMapPointsPCL(Twc);
 
               // pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_ptr =
               //   std::make_shared<pcl::PointCloud<pcl::PointXYZ>>(new_pcl_cloud);
@@ -441,7 +449,7 @@ private:
               accumulated_pcl_cloud_msg_.header.frame_id = "point_cloud";
               accumulated_pcl_cloud_msg_.header.stamp = get_clock()->now();
 
-              frame_pcl_cloud_msg.header.frame_id = "point_cloud";
+              frame_pcl_cloud_msg.header.frame_id = "scan";
               frame_pcl_cloud_msg.header.stamp = get_clock()->now();
 
               laser_scan_->header.stamp = get_clock()->now();

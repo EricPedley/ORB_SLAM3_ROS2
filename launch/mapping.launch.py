@@ -171,7 +171,7 @@ def generate_launch_description():
                         "use_sim_time": True,
                     },
                 ],
-                # arguments=["--ros-args", "--log-level", "DEBUG"],
+                arguments=["--ros-args", "--log-level", "DEBUG"],
             ),
             Node(
                 package="robot_state_publisher",
