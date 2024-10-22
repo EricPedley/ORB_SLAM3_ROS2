@@ -14,6 +14,7 @@
 #include <sensor_msgs/msg/laser_scan.hpp>
 #include <sensor_msgs/msg/point_cloud.hpp>
 #include <std_srvs/srv/empty.hpp>
+#include <tf2/LinearMath/Matrix3x3.h>
 #include <tf2/LinearMath/Quaternion.h>
 #include <tf2_ros/transform_broadcaster.h>
 
@@ -142,9 +143,6 @@ public:
       1000ms, std::bind(&ImuMonoRealSense::timer_callback, this),
       timer_callback_group_);
 
-    // prev_imu_->t = 0.0;
-    // prev_imu_->a = {0.0, 0.0, 0.0};
-    // prev_imu_->w = {0.0, 0.0, 0.0};
     initialize_variables();
   }
 
@@ -162,8 +160,8 @@ private:
     laser_scan_->time_increment = 0.0;
     laser_scan_->angle_min = -M_PI;
     laser_scan_->angle_max = M_PI;
-    laser_scan_->angle_increment = M_PI / 180.0;
-    laser_scan_->range_min = 0.00;
+    laser_scan_->angle_increment = M_PI / 720.0;
+    laser_scan_->range_min = 0.5;
     laser_scan_->range_max = 100.0;
 
     pose_array_ = geometry_msgs::msg::PoseArray();
@@ -205,10 +203,10 @@ private:
 
   double normalize_angle(double rad)
   {
-    while (rad < 0) {
+    while (rad < -M_PI) {
       rad += 2 * M_PI;
     }
-    while (rad > 2 * M_PI) {
+    while (rad > M_PI) {
       rad -= 2 * M_PI;
     }
     return rad;
@@ -223,27 +221,35 @@ private:
       laser_scan_->angle_increment);
     std::fill(laser_scan->ranges.begin(), laser_scan->ranges.end(), 0.0);
 
+    // RCLCPP_INFO_STREAM(get_logger(), "point cloud size: " << cloud->size());
     for (size_t i = 0; i < cloud->points.size(); i++) {
       if (cloud->points.at(i).x <= 1e-6 && cloud->points.at(i).y <= 1e-6) {
         cloud->points.erase(cloud->points.begin() + i);
         continue;
       }
+      cloud->points.resize(cloud->points.size());
       float angle = std::atan2(cloud->points.at(i).y, cloud->points.at(i).x);
-      // if (angle < -M_PI || angle > M_PI) {
-      //   continue;
-      // }
-      // RCLCPP_INFO_STREAM(get_logger(), "angle before: " << angle);
-      angle += M_PI;
       angle = normalize_angle(angle);
-      // RCLCPP_INFO_STREAM(get_logger(), "angle after: " << angle);
-      size_t index = angle / laser_scan->angle_increment;
+      // RCLCPP_INFO_STREAM(get_logger(), "Angle: " << angle);
+      size_t index = (angle + M_PI) / laser_scan->angle_increment;
+      // RCLCPP_INFO_STREAM(get_logger(), "Index: " << index);
       float distance = std::sqrt(cloud->points.at(i).x * cloud->points.at(i).x +
                                  cloud->points.at(i).y * cloud->points.at(i).y);
+      // RCLCPP_INFO_STREAM(get_logger(), "Distance: " << distance);
       if (index < 0 || index >= laser_scan->ranges.size()) {
+        RCLCPP_INFO_STREAM(get_logger(), "Index out of range: " << index);
+        RCLCPP_INFO_STREAM(get_logger(), "laser_scan->ranges.size(): "
+                                           << laser_scan->ranges.size());
+        continue;
+      }
+      if (distance < laser_scan->range_min ||
+          distance > laser_scan->range_max) {
+        RCLCPP_INFO(get_logger(), "Distance out of range: %.6f", distance);
         continue;
       }
       if (laser_scan->ranges.at(index) <= 1e-6 ||
           distance < laser_scan->ranges.at(index)) {
+        // RCLCPP_INFO(get_logger(), "adding distance: %.6f", distance);
         laser_scan->ranges[index] = distance;
       }
     }
@@ -314,11 +320,18 @@ private:
                 Twc.unit_quaternion().x(), Twc.unit_quaternion().y(),
                 Twc.unit_quaternion().z(), Twc.unit_quaternion().w());
 
+              tf2::Matrix3x3 m(q_orig);
+              double roll, pitch, yaw;
+              m.getRPY(roll, pitch, yaw);
+
+              tf2::Quaternion q_yaw;
+              q_yaw.setRPY(0, 0, yaw);
+
               tf2::Quaternion q_rot_x, q_rot_z;
               // q_rot_x.setRPY(M_PI / 2.0, 0, 0);
               q_rot_z.setRPY(0, 0, M_PI / 2.0);
 
-              tf2::Quaternion q_combined = q_rot_z * q_orig;
+              tf2::Quaternion q_combined = q_rot_z * q_yaw;
               q_combined.normalize();
 
               if (pose_array_.poses.size() == 0) {
@@ -356,7 +369,6 @@ private:
                 odom_msg_.twist.twist.angular.x = angular_velocity.x();
                 odom_msg_.twist.twist.angular.y = angular_velocity.y();
                 odom_msg_.twist.twist.angular.z = angular_velocity.z();
-                RCLCPP_INFO(get_logger(), "publishing odom message");
                 odom_publisher_->publish(odom_msg_);
               }
 
@@ -393,32 +405,32 @@ private:
               scan_tf.header.stamp = time_now;
               scan_tf.header.frame_id = "base_link";
               scan_tf.child_frame_id = "scan";
-              scan_tf.transform.rotation.x = q_combined2.x();
-              scan_tf.transform.rotation.y = q_combined2.y();
-              scan_tf.transform.rotation.z = q_combined2.z();
-              scan_tf.transform.rotation.w = q_combined2.w();
+              // scan_tf.transform.rotation.x = q_combined2.x();
+              // scan_tf.transform.rotation.y = q_combined2.y();
+              // scan_tf.transform.rotation.z = q_combined2.z();
+              // scan_tf.transform.rotation.w = q_combined2.w();
               tf_broadcaster->sendTransform(scan_tf);
 
               geometry_msgs::msg::TransformStamped point_cloud_tf;
               point_cloud_tf.header.stamp = time_now;
               point_cloud_tf.header.frame_id = "map";
               point_cloud_tf.child_frame_id = "point_cloud";
-              // t.transform.translation.z = 2;
               tf_broadcaster->sendTransform(point_cloud_tf);
-
-              // pcl::PointCloud<pcl::PointXYZ> new_pcl_cloud =
-              //   orb_slam3_system_->GetTrackedMapPointsPCL();
 
               frame_pcl_cloud_ = orb_slam3_system_->GetTrackedMapPointsPCL(Twc);
 
-              // pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_ptr =
-              //   std::make_shared<pcl::PointCloud<pcl::PointXYZ>>(new_pcl_cloud);
-              //
               pcl::PointCloud<pcl::PointXYZ>::Ptr frame_ptr =
                 std::make_shared<pcl::PointCloud<pcl::PointXYZ>>(
                   frame_pcl_cloud_);
 
-              point_cloud_to_laser_scan(frame_ptr, laser_scan_);
+              for (size_t i = 0; i < frame_ptr->points.size(); i++) {
+                if (frame_ptr->points.at(i).x <= 1e-6 &&
+                    frame_ptr->points.at(i).y <= 1e-6) {
+                  frame_ptr->points.erase(frame_ptr->points.begin() + i);
+                  continue;
+                }
+              }
+              frame_ptr->width = frame_ptr->points.size();
 
               // voxel grid filter
               pcl::PointCloud<pcl::PointXYZ>::Ptr voxel_cloud(
@@ -437,6 +449,9 @@ private:
               sor.setStddevMulThresh(0.1);
               sor.filter(*sor_cloud);
 
+              point_cloud_to_laser_scan(sor_cloud, laser_scan_);
+
+              sor_cloud->width = sor_cloud->points.size();
               pcl::toROSMsg(*sor_cloud, frame_pcl_cloud_msg);
 
               // pcl_cloud_ = orb_slam3_system_->GetMapPCL();
@@ -460,17 +475,17 @@ private:
           frame_pcl_cloud_.clear();
           pose_array_.poses.clear();
           pose_array_.header.stamp = time_now;
-          for (const auto &pose : orb_slam3_system_->GetTcoPoses()) {
-            geometry_msgs::msg::Pose pose_msg;
-            pose_msg.position.x = pose->translation().x();
-            pose_msg.position.y = pose->translation().y();
-            // pose_msg.position.z = pose->translation().z();
-            pose_msg.orientation.x = pose->unit_quaternion().x();
-            pose_msg.orientation.y = pose->unit_quaternion().y();
-            pose_msg.orientation.z = pose->unit_quaternion().z();
-            pose_msg.orientation.w = pose->unit_quaternion().w();
-            pose_array_.poses.push_back(pose_msg);
-          }
+          // for (const auto &pose : orb_slam3_system_->GetTcoPoses()) {
+          //   geometry_msgs::msg::Pose pose_msg;
+          //   pose_msg.position.x = pose->translation().x();
+          //   pose_msg.position.y = pose->translation().y();
+          //   // pose_msg.position.z = pose->translation().z();
+          //   pose_msg.orientation.x = pose->unit_quaternion().x();
+          //   pose_msg.orientation.y = pose->unit_quaternion().y();
+          //   pose_msg.orientation.z = pose->unit_quaternion().z();
+          //   pose_msg.orientation.w = pose->unit_quaternion().w();
+          //   pose_array_.poses.push_back(pose_msg);
+          // }
           RCLCPP_INFO(get_logger(), "Inertial BA1 complete");
         }
 
@@ -480,20 +495,19 @@ private:
           frame_pcl_cloud_.clear();
           pose_array_.poses.clear();
           pose_array_.header.stamp = time_now;
-          for (const auto &pose : orb_slam3_system_->GetTcoPoses()) {
-            geometry_msgs::msg::Pose pose_msg;
-            pose_msg.position.x = pose->translation().x();
-            pose_msg.position.y = pose->translation().y();
-            // pose_msg.position.z = pose->translation().z();
-            pose_msg.orientation.x = pose->unit_quaternion().x();
-            pose_msg.orientation.y = pose->unit_quaternion().y();
-            pose_msg.orientation.z = pose->unit_quaternion().z();
-            pose_msg.orientation.w = pose->unit_quaternion().w();
-            pose_array_.poses.push_back(pose_msg);
-          }
+          // for (const auto &pose : orb_slam3_system_->GetTcoPoses()) {
+          //   geometry_msgs::msg::Pose pose_msg;
+          //   pose_msg.position.x = pose->translation().x();
+          //   pose_msg.position.y = pose->translation().y();
+          //   // pose_msg.position.z = pose->translation().z();
+          //   pose_msg.orientation.x = pose->unit_quaternion().x();
+          //   pose_msg.orientation.y = pose->unit_quaternion().y();
+          //   pose_msg.orientation.z = pose->unit_quaternion().z();
+          //   pose_msg.orientation.w = pose->unit_quaternion().w();
+          //   pose_array_.poses.push_back(pose_msg);
+          // }
           RCLCPP_INFO(get_logger(), "Inertial BA2 complete");
         }
-
       } catch (const std::exception &e) {
         RCLCPP_ERROR(get_logger(), "SLAM processing exception: %s", e.what());
       }
