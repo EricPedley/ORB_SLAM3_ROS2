@@ -11,7 +11,6 @@
 #include <rmw/qos_profiles.h>
 #include <sensor_msgs/msg/image.hpp>
 #include <sensor_msgs/msg/imu.hpp>
-#include <sensor_msgs/msg/laser_scan.hpp>
 #include <sensor_msgs/msg/point_cloud.hpp>
 #include <std_srvs/srv/empty.hpp>
 #include <tf2/LinearMath/Matrix3x3.h>
@@ -103,8 +102,6 @@ public:
     frame_pcl_cloud_publisher_ =
       create_publisher<sensor_msgs::msg::PointCloud2>("tracked_point_cloud2",
                                                       10);
-    laser_scan_publisher_ =
-      create_publisher<sensor_msgs::msg::LaserScan>("scan", 10);
     pose_array_publisher_ =
       create_publisher<geometry_msgs::msg::PoseArray>("pose_array", 100);
     odom_publisher_ = create_publisher<nav_msgs::msg::Odometry>("odom", 10);
@@ -154,16 +151,6 @@ public:
 private:
   void initialize_variables()
   {
-    laser_scan_ = std::make_shared<sensor_msgs::msg::LaserScan>();
-    laser_scan_->header.frame_id = "scan";
-    laser_scan_->scan_time = 0.0;
-    laser_scan_->time_increment = 0.0;
-    laser_scan_->angle_min = -M_PI;
-    laser_scan_->angle_max = M_PI;
-    laser_scan_->angle_increment = M_PI / 720.0;
-    laser_scan_->range_min = 0.5;
-    laser_scan_->range_max = 100.0;
-
     pose_array_ = geometry_msgs::msg::PoseArray();
     pose_array_.header.frame_id = "point_cloud";
 
@@ -198,60 +185,6 @@ private:
     } else {
       std::cerr << "Error image type" << std::endl;
       return cv_ptr->image.clone();
-    }
-  }
-
-  double normalize_angle(double rad)
-  {
-    while (rad < -M_PI) {
-      rad += 2 * M_PI;
-    }
-    while (rad > M_PI) {
-      rad -= 2 * M_PI;
-    }
-    return rad;
-  }
-
-  void
-  point_cloud_to_laser_scan(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud,
-                            sensor_msgs::msg::LaserScan::SharedPtr laser_scan)
-  {
-    laser_scan->ranges.resize(
-      (laser_scan_->angle_max - laser_scan_->angle_min) /
-      laser_scan_->angle_increment);
-    std::fill(laser_scan->ranges.begin(), laser_scan->ranges.end(), 0.0);
-
-    // RCLCPP_INFO_STREAM(get_logger(), "point cloud size: " << cloud->size());
-    for (size_t i = 0; i < cloud->points.size(); i++) {
-      if (cloud->points.at(i).x <= 1e-6 && cloud->points.at(i).y <= 1e-6) {
-        cloud->points.erase(cloud->points.begin() + i);
-        continue;
-      }
-      cloud->points.resize(cloud->points.size());
-      float angle = std::atan2(cloud->points.at(i).y, cloud->points.at(i).x);
-      angle = normalize_angle(angle);
-      // RCLCPP_INFO_STREAM(get_logger(), "Angle: " << angle);
-      size_t index = (angle + M_PI) / laser_scan->angle_increment;
-      // RCLCPP_INFO_STREAM(get_logger(), "Index: " << index);
-      float distance = std::sqrt(cloud->points.at(i).x * cloud->points.at(i).x +
-                                 cloud->points.at(i).y * cloud->points.at(i).y);
-      // RCLCPP_INFO_STREAM(get_logger(), "Distance: " << distance);
-      if (index < 0 || index >= laser_scan->ranges.size()) {
-        RCLCPP_INFO_STREAM(get_logger(), "Index out of range: " << index);
-        RCLCPP_INFO_STREAM(get_logger(), "laser_scan->ranges.size(): "
-                                           << laser_scan->ranges.size());
-        continue;
-      }
-      if (distance < laser_scan->range_min ||
-          distance > laser_scan->range_max) {
-        RCLCPP_INFO(get_logger(), "Distance out of range: %.6f", distance);
-        continue;
-      }
-      if (laser_scan->ranges.at(index) <= 1e-6 ||
-          distance < laser_scan->ranges.at(index)) {
-        // RCLCPP_INFO(get_logger(), "adding distance: %.6f", distance);
-        laser_scan->ranges[index] = distance;
-      }
     }
   }
 
@@ -312,9 +245,7 @@ private:
             auto Tcw =
               orb_slam3_system_->TrackMonocular(imageFrame, tImage, vImuMeas);
             auto Twc = Tcw.inverse();
-            if (orb_slam3_system_->isImuInitialized() ||
-                orb_slam3_system_->GetInertialBA1() ||
-                orb_slam3_system_->GetInertialBA2()) {
+            if (orb_slam3_system_->isImuInitialized()) {
 
               tf2::Quaternion q_orig(
                 Twc.unit_quaternion().x(), Twc.unit_quaternion().y(),
@@ -334,44 +265,6 @@ private:
               tf2::Quaternion q_combined = q_rot_z * q_yaw;
               q_combined.normalize();
 
-              if (pose_array_.poses.size() == 0) {
-                prev_position_ = Twc.translation();
-                prev_time_ = tImage;
-                prev_imu_ =
-                  std::make_shared<ORB_SLAM3::IMU::Point>(vImuMeas.back());
-              } else {
-                // // calculate linear velocity
-                Eigen::Vector3f velocity =
-                  (Twc.translation() - prev_position_) / (tImage - prev_time_);
-                prev_position_ = Twc.translation();
-                prev_time_ = tImage;
-                prev_imu_ =
-                  std::make_shared<ORB_SLAM3::IMU::Point>(vImuMeas.back());
-
-                // calculate angular velocity
-                Eigen::Vector3f angular_velocity =
-                  (vImuMeas.back().w - prev_imu_->w) / (tImage - prev_imu_->t);
-
-                nav_msgs::msg::Odometry odom;
-                odom_msg_.header.stamp = get_clock()->now();
-                odom_msg_.header.frame_id = "map";
-                odom_msg_.child_frame_id = "odom";
-                odom_msg_.pose.pose.position.x = Twc.translation().x();
-                odom_msg_.pose.pose.position.y = Twc.translation().y();
-                odom_msg_.pose.pose.position.z = Twc.translation().z();
-                odom_msg_.pose.pose.orientation.x = q_combined.x();
-                odom_msg_.pose.pose.orientation.y = q_combined.y();
-                odom_msg_.pose.pose.orientation.z = q_combined.z();
-                odom_msg_.pose.pose.orientation.w = q_combined.w();
-                odom_msg_.twist.twist.linear.x = velocity.x();
-                odom_msg_.twist.twist.linear.y = velocity.y();
-                odom_msg_.twist.twist.linear.z = velocity.z();
-                odom_msg_.twist.twist.angular.x = angular_velocity.x();
-                odom_msg_.twist.twist.angular.y = angular_velocity.y();
-                odom_msg_.twist.twist.angular.z = angular_velocity.z();
-                odom_publisher_->publish(odom_msg_);
-              }
-
               geometry_msgs::msg::Pose pose;
               pose.position.x = Twc.translation().x();
               pose.position.y = Twc.translation().y();
@@ -385,7 +278,7 @@ private:
 
               geometry_msgs::msg::TransformStamped base_link_tf;
               base_link_tf.header.stamp = time_now;
-              base_link_tf.header.frame_id = "odom";
+              base_link_tf.header.frame_id = "point_cloud";
               base_link_tf.child_frame_id = "base_link";
               base_link_tf.transform.translation.x = Twc.translation().x();
               base_link_tf.transform.translation.y = Twc.translation().y();
@@ -417,26 +310,31 @@ private:
               point_cloud_tf.child_frame_id = "point_cloud";
               tf_broadcaster->sendTransform(point_cloud_tf);
 
-              frame_pcl_cloud_ = orb_slam3_system_->GetTrackedMapPointsPCL(Twc);
+              // frame_pcl_cloud_ = orb_slam3_system_->GetTrackedMapPointsPCL(Twc);
 
-              pcl::PointCloud<pcl::PointXYZ>::Ptr frame_ptr =
+              // pcl::PointCloud<pcl::PointXYZ>::Ptr frame_ptr =
+              //   std::make_shared<pcl::PointCloud<pcl::PointXYZ>>(
+              //     frame_pcl_cloud_);
+
+              // for (size_t i = 0; i < frame_ptr->points.size(); i++) {
+              //   if (frame_ptr->points.at(i).x <= 1e-6 &&
+              //       frame_ptr->points.at(i).y <= 1e-6) {
+              //     frame_ptr->points.erase(frame_ptr->points.begin() + i);
+              //     continue;
+              //   }
+              // }
+              // frame_ptr->width = frame_ptr->points.size();
+              accumulated_pcl_cloud_ = orb_slam3_system_->GetMapPCL();
+
+              pcl::PointCloud<pcl::PointXYZ>::Ptr accumulated_ptr =
                 std::make_shared<pcl::PointCloud<pcl::PointXYZ>>(
-                  frame_pcl_cloud_);
-
-              for (size_t i = 0; i < frame_ptr->points.size(); i++) {
-                if (frame_ptr->points.at(i).x <= 1e-6 &&
-                    frame_ptr->points.at(i).y <= 1e-6) {
-                  frame_ptr->points.erase(frame_ptr->points.begin() + i);
-                  continue;
-                }
-              }
-              frame_ptr->width = frame_ptr->points.size();
+                  accumulated_pcl_cloud_);
 
               // voxel grid filter
               pcl::PointCloud<pcl::PointXYZ>::Ptr voxel_cloud(
                 new pcl::PointCloud<pcl::PointXYZ>);
               pcl::VoxelGrid<pcl::PointXYZ> vg;
-              vg.setInputCloud(frame_ptr);
+              vg.setInputCloud(accumulated_ptr);
               vg.setLeafSize(0.05f, 0.05f, 0.05f);
               vg.filter(*voxel_cloud);
 
@@ -449,63 +347,31 @@ private:
               sor.setStddevMulThresh(0.1);
               sor.filter(*sor_cloud);
 
-              point_cloud_to_laser_scan(sor_cloud, laser_scan_);
-
               sor_cloud->width = sor_cloud->points.size();
               pcl::toROSMsg(*sor_cloud, frame_pcl_cloud_msg);
 
-              // pcl_cloud_ = orb_slam3_system_->GetMapPCL();
-              accumulated_pcl_cloud_ += frame_pcl_cloud_;
               pcl::toROSMsg(accumulated_pcl_cloud_, accumulated_pcl_cloud_msg_);
 
               accumulated_pcl_cloud_msg_.header.frame_id = "point_cloud";
               accumulated_pcl_cloud_msg_.header.stamp = time_now;
 
-              frame_pcl_cloud_msg.header.frame_id = "scan";
-              frame_pcl_cloud_msg.header.stamp = time_now;
-
-              laser_scan_->header.stamp = time_now;
+              // frame_pcl_cloud_msg.header.frame_id = "scan";
+              // frame_pcl_cloud_msg.header.stamp = time_now;
             }
           }
         }
 
         if (!inertial_ba1_ && orb_slam3_system_->GetInertialBA1()) {
           inertial_ba1_ = true;
-          accumulated_pcl_cloud_ = orb_slam3_system_->GetMapPCL();
-          frame_pcl_cloud_.clear();
           pose_array_.poses.clear();
           pose_array_.header.stamp = time_now;
-          // for (const auto &pose : orb_slam3_system_->GetTcoPoses()) {
-          //   geometry_msgs::msg::Pose pose_msg;
-          //   pose_msg.position.x = pose->translation().x();
-          //   pose_msg.position.y = pose->translation().y();
-          //   // pose_msg.position.z = pose->translation().z();
-          //   pose_msg.orientation.x = pose->unit_quaternion().x();
-          //   pose_msg.orientation.y = pose->unit_quaternion().y();
-          //   pose_msg.orientation.z = pose->unit_quaternion().z();
-          //   pose_msg.orientation.w = pose->unit_quaternion().w();
-          //   pose_array_.poses.push_back(pose_msg);
-          // }
           RCLCPP_INFO(get_logger(), "Inertial BA1 complete");
         }
 
         if (!inertial_ba2_ && orb_slam3_system_->GetInertialBA2()) {
           inertial_ba2_ = true;
-          accumulated_pcl_cloud_ = orb_slam3_system_->GetMapPCL();
-          frame_pcl_cloud_.clear();
           pose_array_.poses.clear();
           pose_array_.header.stamp = time_now;
-          // for (const auto &pose : orb_slam3_system_->GetTcoPoses()) {
-          //   geometry_msgs::msg::Pose pose_msg;
-          //   pose_msg.position.x = pose->translation().x();
-          //   pose_msg.position.y = pose->translation().y();
-          //   // pose_msg.position.z = pose->translation().z();
-          //   pose_msg.orientation.x = pose->unit_quaternion().x();
-          //   pose_msg.orientation.y = pose->unit_quaternion().y();
-          //   pose_msg.orientation.z = pose->unit_quaternion().z();
-          //   pose_msg.orientation.w = pose->unit_quaternion().w();
-          //   pose_array_.poses.push_back(pose_msg);
-          // }
           RCLCPP_INFO(get_logger(), "Inertial BA2 complete");
         }
       } catch (const std::exception &e) {
@@ -546,16 +412,11 @@ private:
 
       // publish the variables I've been accumulating in the image callback
       pose_array_publisher_->publish(pose_array_);
-      // odom_publisher_->publish(odom_msg_);
-      frame_pcl_cloud_publisher_->publish(frame_pcl_cloud_msg);
       accumulated_pcl_cloud_msg_publisher_->publish(accumulated_pcl_cloud_msg_);
-      laser_scan_publisher_->publish(*laser_scan_);
 
     } else {
-      // octomap_server_client_->async_send_request(
-      //   std::make_shared<std_srvs::srv::Empty::Request>());
-      accumulated_pcl_cloud_ = orb_slam3_system_->GetMapPCL();
-      frame_pcl_cloud_.clear();
+      octomap_server_client_->async_send_request(
+        std::make_shared<std_srvs::srv::Empty::Request>());
       initialize_variables();
     }
   }
@@ -566,8 +427,6 @@ private:
     accumulated_pcl_cloud_msg_publisher_;
   rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr
     frame_pcl_cloud_publisher_;
-  rclcpp::Publisher<sensor_msgs::msg::LaserScan>::SharedPtr
-    laser_scan_publisher_;
   rclcpp::Publisher<geometry_msgs::msg::PoseArray>::SharedPtr
     pose_array_publisher_;
   rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr odom_publisher_;
@@ -584,7 +443,6 @@ private:
   std::unique_ptr<tf2_ros::TransformBroadcaster> tf_broadcaster;
 
   sensor_msgs::msg::Imu imu_msg;
-  std::shared_ptr<sensor_msgs::msg::LaserScan> laser_scan_;
 
   nav_msgs::msg::Odometry odom_msg_;
 
