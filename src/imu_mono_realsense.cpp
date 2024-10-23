@@ -99,12 +99,8 @@ public:
     // create publishers
     accumulated_pcl_cloud_msg_publisher_ =
       create_publisher<sensor_msgs::msg::PointCloud2>("orb_point_cloud2", 10);
-    frame_pcl_cloud_publisher_ =
-      create_publisher<sensor_msgs::msg::PointCloud2>("tracked_point_cloud2",
-                                                      10);
     pose_array_publisher_ =
       create_publisher<geometry_msgs::msg::PoseArray>("pose_array", 100);
-    odom_publisher_ = create_publisher<nav_msgs::msg::Odometry>("odom", 10);
 
     // create subscriptions
     rclcpp::QoS image_qos(rclcpp::KeepLast(10));
@@ -298,10 +294,6 @@ private:
               scan_tf.header.stamp = time_now;
               scan_tf.header.frame_id = "base_link";
               scan_tf.child_frame_id = "scan";
-              // scan_tf.transform.rotation.x = q_combined2.x();
-              // scan_tf.transform.rotation.y = q_combined2.y();
-              // scan_tf.transform.rotation.z = q_combined2.z();
-              // scan_tf.transform.rotation.w = q_combined2.w();
               tf_broadcaster->sendTransform(scan_tf);
 
               geometry_msgs::msg::TransformStamped point_cloud_tf;
@@ -310,20 +302,6 @@ private:
               point_cloud_tf.child_frame_id = "point_cloud";
               tf_broadcaster->sendTransform(point_cloud_tf);
 
-              // frame_pcl_cloud_ = orb_slam3_system_->GetTrackedMapPointsPCL(Twc);
-
-              // pcl::PointCloud<pcl::PointXYZ>::Ptr frame_ptr =
-              //   std::make_shared<pcl::PointCloud<pcl::PointXYZ>>(
-              //     frame_pcl_cloud_);
-
-              // for (size_t i = 0; i < frame_ptr->points.size(); i++) {
-              //   if (frame_ptr->points.at(i).x <= 1e-6 &&
-              //       frame_ptr->points.at(i).y <= 1e-6) {
-              //     frame_ptr->points.erase(frame_ptr->points.begin() + i);
-              //     continue;
-              //   }
-              // }
-              // frame_ptr->width = frame_ptr->points.size();
               accumulated_pcl_cloud_ = orb_slam3_system_->GetMapPCL();
 
               pcl::PointCloud<pcl::PointXYZ>::Ptr accumulated_ptr =
@@ -348,15 +326,10 @@ private:
               sor.filter(*sor_cloud);
 
               sor_cloud->width = sor_cloud->points.size();
-              pcl::toROSMsg(*sor_cloud, frame_pcl_cloud_msg);
-
-              pcl::toROSMsg(accumulated_pcl_cloud_, accumulated_pcl_cloud_msg_);
+              pcl::toROSMsg(*sor_cloud, accumulated_pcl_cloud_msg_);
 
               accumulated_pcl_cloud_msg_.header.frame_id = "point_cloud";
               accumulated_pcl_cloud_msg_.header.stamp = time_now;
-
-              // frame_pcl_cloud_msg.header.frame_id = "scan";
-              // frame_pcl_cloud_msg.header.stamp = time_now;
             }
           }
         }
@@ -425,11 +398,8 @@ private:
   rclcpp::Subscription<sensor_msgs::msg::Imu>::SharedPtr imu_sub;
   rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr
     accumulated_pcl_cloud_msg_publisher_;
-  rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr
-    frame_pcl_cloud_publisher_;
   rclcpp::Publisher<geometry_msgs::msg::PoseArray>::SharedPtr
     pose_array_publisher_;
-  rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr odom_publisher_;
   rclcpp::Service<std_srvs::srv::Empty>::SharedPtr slam_service;
   rclcpp::Client<std_srvs::srv::Empty>::SharedPtr octomap_server_client_;
   rclcpp::TimerBase::SharedPtr timer;
@@ -462,17 +432,9 @@ private:
   std::string settings_file_path;
 
   sensor_msgs::msg::PointCloud2 accumulated_pcl_cloud_msg_;
-  sensor_msgs::msg::PointCloud2 frame_pcl_cloud_msg;
-  pcl::PointCloud<pcl::PointXYZ> frame_pcl_cloud_;
   pcl::PointCloud<pcl::PointXYZ> accumulated_pcl_cloud_;
 
   geometry_msgs::msg::PoseArray pose_array_;
-
-  std::shared_ptr<ORB_SLAM3::IMU::Point> initial_orientation;
-  Eigen::Vector3f prev_position_;
-  Eigen::Quaternionf prev_orientation_;
-  std::shared_ptr<ORB_SLAM3::IMU::Point> prev_imu_;
-  double prev_time_;
 
   bool inertial_ba1_;
   bool inertial_ba2_;
