@@ -137,7 +137,7 @@ target_include_directories(imu_mono_node_cpp PUBLIC
 
 target_link_libraries(visualize_point_cloud PUBLIC ${PCL_LIBRARIES})
 target_link_libraries(apriltag_node PUBLIC apriltag::apriltag)
-target_link_libraries(imu_mono_node_cpp PUBLIC ${ORB_SLAM3_LIBRARY})
+target_link_libraries(imu_mono_node_cpp PUBLIC ${ORB_SLAM3_LIBRARY} -lboost_serialization)
 # target_link_libraries(mono_node_cpp PUBLIC ORB_SLAM3)
 # target_link_libraries(example_mono_node_cpp PUBLIC ORB_SLAM3)
 
