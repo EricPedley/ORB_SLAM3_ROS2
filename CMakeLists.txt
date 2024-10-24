@@ -48,6 +48,7 @@ find_package(PCL 1.12 REQUIRED)
 
 find_package(ORB_SLAM3 REQUIRED)
 find_package(libpointmatcher REQUIRED)
+find_package(libpointmatcher_ros REQUIRED)
 
 if(ORB_SLAM3_LIBRARY)
     message("Found ORB_SLAM3: ${ORB_SLAM3_LIBRARY}")
@@ -135,6 +136,7 @@ include_directories(
     ${ORB_SLAM3_ROOT_DIR}/Thirdparty/Sophus
     ${PCL_INCLUDE_DIRS}
     ${libpointmatcher_INCLUDE_DIRS}
+    ${libpointmatcher_ros_INCLUDE_DIRS}
 )
 message(WARNING "using libpoinitmatcher: ${libpointmatcher_INCLUDE_DIRS}")
 
@@ -149,7 +151,7 @@ target_include_directories(imu_mono_node_cpp PUBLIC
 target_link_libraries(visualize_point_cloud PUBLIC ${PCL_LIBRARIES})
 target_link_libraries(apriltag_node PUBLIC apriltag::apriltag)
 target_link_libraries(imu_mono_node_cpp PUBLIC ${ORB_SLAM3_LIBRARY})
-target_link_libraries(localize PUBLIC ${PCL_LIBRARIES} ${libpointmatcher_LIBRARIES})
+target_link_libraries(localize PUBLIC ${PCL_LIBRARIES} ${libpointmatcher_LIBRARIES} ${libpointmatcher_ros_LIBRARIES})
 
 install(TARGETS localize apriltag_node visualize_point_cloud capture_video imu_mono_node_cpp # mono_node_cpp example_mono_node_cpp
     DESTINATION lib/${PROJECT_NAME}
