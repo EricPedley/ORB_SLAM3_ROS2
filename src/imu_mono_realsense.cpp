@@ -1,8 +1,11 @@
+#include <pcl/io/pcd_io.h>
+#include <pcl/io/ply_io.h>
+#include <pcl/filters/filter.h>
+
 #include <geometry_msgs/msg/pose_array.hpp>
 #include <geometry_msgs/msg/quaternion.hpp>
 #include <geometry_msgs/msg/vector3.hpp>
 #include <nav_msgs/msg/odometry.hpp>
-#include <opencv2/calib3d.hpp>
 #include <pcl/filters/statistical_outlier_removal.h>
 #include <pcl/filters/voxel_grid.h>
 #include <pcl_conversions/pcl_conversions.h>
@@ -20,16 +23,6 @@
 #include <sstream>
 
 #include <cv_bridge/cv_bridge.h>
-
-#include <opencv2/opencv.hpp>
-
-#include <pcl/filters/conditional_removal.h>
-#include <pcl/filters/statistical_outlier_removal.h>
-#include <pcl/filters/voxel_grid.h>
-#include <pcl/impl/point_types.hpp>
-#include <pcl/point_cloud.h>
-#include <pcl_conversions/pcl_conversions.h>
-#include <pcl_ros/transforms.hpp>
 
 // this is orb_slam3
 #include "System.h"
@@ -141,7 +134,7 @@ public:
 
   ~ImuMonoRealSense()
   {
-    orb_slam3_system_->SavePCDBinary(std::string(PROJECT_PATH) + "/maps/");
+    orb_slam3_system_->SavePCDASCII(std::string(PROJECT_PATH) + "/maps/");
   }
 
 private:
@@ -309,18 +302,18 @@ private:
                   accumulated_pcl_cloud_);
 
               // voxel grid filter
-              pcl::PointCloud<pcl::PointXYZ>::Ptr voxel_cloud(
-                new pcl::PointCloud<pcl::PointXYZ>);
-              pcl::VoxelGrid<pcl::PointXYZ> vg;
-              vg.setInputCloud(accumulated_ptr);
-              vg.setLeafSize(0.05f, 0.05f, 0.05f);
-              vg.filter(*voxel_cloud);
+              // pcl::PointCloud<pcl::PointXYZ>::Ptr voxel_cloud(
+              //   new pcl::PointCloud<pcl::PointXYZ>);
+              // pcl::VoxelGrid<pcl::PointXYZ> vg;
+              // vg.setInputCloud(accumulated_ptr);
+              // vg.setLeafSize(0.05f, 0.05f, 0.05f);
+              // vg.filter(*voxel_cloud);
 
               // statistical outlier removal
               pcl::PointCloud<pcl::PointXYZ>::Ptr sor_cloud(
                 new pcl::PointCloud<pcl::PointXYZ>);
               pcl::StatisticalOutlierRemoval<pcl::PointXYZ> sor;
-              sor.setInputCloud(voxel_cloud);
+              sor.setInputCloud(accumulated_ptr);
               sor.setMeanK(100);
               sor.setStddevMulThresh(0.1);
               sor.filter(*sor_cloud);

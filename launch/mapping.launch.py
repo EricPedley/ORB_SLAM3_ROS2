@@ -66,18 +66,6 @@ def generate_launch_description():
                         default, the name of the bag will be\
                         ORB_SLAM3_YYYY-MM-DD_HH-mm-ss",
             ),
-            DeclareLaunchArgument(
-                "slam_params_file",
-                default_value=PathJoinSubstitution(
-                    [
-                        FindPackageShare("orb_slam3_ros2"),
-                        "config",
-                        "mapper_params_online_async.yaml",
-                    ],
-                ),
-                description="Full path to the ROS2 parameters file to use for\
-                        the slam_toolbox node",
-            ),
             IncludeLaunchDescription(
                 PythonLaunchDescriptionSource(
                     PathJoinSubstitution(
@@ -106,30 +94,6 @@ def generate_launch_description():
                     )
                 ),
             ),
-            # Node(
-            #     package="pointcloud_to_laserscan",
-            #     executable="pointcloud_to_laserscan_node",
-            #     remappings=[
-            #         ("cloud_in", "tracked_point_cloud2"),
-            #         # ("scan", "/orb_slam3_ros2/pointcloud"),
-            #     ],
-            #     parameters=[
-            #         {
-            #             "target_frame": "point_cloud",
-            #             "transform_tolerance": 0.01,
-            #             "min_height": 0.0,
-            #             "max_height": 1.0,
-            #             "angle_min": -1.5708,  # -M_PI/2
-            #             "angle_max": 1.5708,  # M_PI/2
-            #             "angle_increment": 0.0087,  # M_PI/360.0
-            #             "scan_time": 1.0,
-            #             "range_min": 0.45,
-            #             "range_max": 100.0,
-            #             "use_inf": True,
-            #             "inf_epsilon": 1.0,
-            #         }
-            #     ],
-            # ),
             Node(
                 package="orb_slam3_ros2",
                 executable="imu_mono_node_cpp",
@@ -157,22 +121,6 @@ def generate_launch_description():
             #     remappings=[("cloud_in", "orb_point_cloud2"),
             #                 ("projected_map", "map")],
             # ),
-            Node(
-                package="slam_toolbox",
-                executable="async_slam_toolbox_node",
-                output="screen",
-                parameters=[
-                    os.path.join(
-                        get_package_share_directory("orb_slam3_ros2"),
-                        "config",
-                        "mapper_params_online_async.yaml",
-                    ),
-                    {
-                        "use_sim_time": True,
-                    },
-                ],
-                # arguments=["--ros-args", "--log-level", "DEBUG"],
-            ),
             Node(
                 package="robot_state_publisher",
                 executable="robot_state_publisher",

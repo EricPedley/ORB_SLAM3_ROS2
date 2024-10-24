@@ -47,6 +47,7 @@ find_package(PCL 1.12 REQUIRED)
 # find_package(pcl_conversions REQUIRED)
 
 find_package(ORB_SLAM3 REQUIRED)
+find_package(libpointmatcher REQUIRED)
 
 if(ORB_SLAM3_LIBRARY)
     message("Found ORB_SLAM3: ${ORB_SLAM3_LIBRARY}")
@@ -89,6 +90,10 @@ add_executable(imu_mono_node_cpp
   src/imu_mono_realsense.cpp
 )
 
+add_executable(localize
+    src/localize.cpp
+)
+
 add_executable(capture_video
     src/capture_realsense_video.cpp
 )
@@ -103,6 +108,10 @@ add_executable(apriltag_node
 
 ament_target_dependencies(imu_mono_node_cpp
   PUBLIC ${THIS_PACKAGE_INCLUDE_DEPENDS}
+)
+
+ament_target_dependencies(localize
+    PUBLIC ${THIS_PACKAGE_INCLUDE_DEPENDS}
 )
 
 ament_target_dependencies(capture_video
@@ -125,7 +134,9 @@ include_directories(
     ${ORB_SLAM3_ROOT_DIR}/include/CameraModels
     ${ORB_SLAM3_ROOT_DIR}/Thirdparty/Sophus
     ${PCL_INCLUDE_DIRS}
+    ${libpointmatcher_INCLUDE_DIRS}
 )
+message(WARNING "using libpoinitmatcher: ${libpointmatcher_INCLUDE_DIRS}")
 
 link_directories(
     include
@@ -137,11 +148,10 @@ target_include_directories(imu_mono_node_cpp PUBLIC
 
 target_link_libraries(visualize_point_cloud PUBLIC ${PCL_LIBRARIES})
 target_link_libraries(apriltag_node PUBLIC apriltag::apriltag)
-target_link_libraries(imu_mono_node_cpp PUBLIC ${ORB_SLAM3_LIBRARY} -lboost_serialization)
-# target_link_libraries(mono_node_cpp PUBLIC ORB_SLAM3)
-# target_link_libraries(example_mono_node_cpp PUBLIC ORB_SLAM3)
+target_link_libraries(imu_mono_node_cpp PUBLIC ${ORB_SLAM3_LIBRARY})
+target_link_libraries(localize PUBLIC ${PCL_LIBRARIES} ${libpointmatcher_LIBRARIES})
 
-install(TARGETS apriltag_node visualize_point_cloud capture_video imu_mono_node_cpp # mono_node_cpp example_mono_node_cpp
+install(TARGETS localize apriltag_node visualize_point_cloud capture_video imu_mono_node_cpp # mono_node_cpp example_mono_node_cpp
     DESTINATION lib/${PROJECT_NAME}
 )
 

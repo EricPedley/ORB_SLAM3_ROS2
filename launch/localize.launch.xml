@@ -1,0 +1,7 @@
+<launch>
+    <arg name="reference_map_file" default="changeme.pcd"/>
+    <node pkg="rviz2" exec="rviz2" args="-d $(find-pkg-share orb_slam3_ros2)/config/localize.rviz"/>
+    <node pkg="orb_slam3_ros2" exec="localize" output="screen">
+        <param name="reference_map_file" value="$(var reference_map_file)"/>
+    </node>
+</launch>
