@@ -1,7 +1,4 @@
-import os
 from datetime import datetime
-
-from ament_index_python.packages import get_package_share_directory
 
 from launch import LaunchDescription
 from launch_ros.actions import Node
@@ -13,7 +10,7 @@ from launch.substitutions import (
 )
 from launch.conditions import IfCondition
 from launch_ros.descriptions import ParameterValue
-from launch_ros.substitutions import FindPackageShare, ExecutableInPackage
+from launch_ros.substitutions import FindPackageShare
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.actions import (
     DeclareLaunchArgument,
@@ -28,6 +25,11 @@ def generate_launch_description():
     return LaunchDescription(
         [
             DeclareLaunchArgument(
+                "reference_map_file",
+                default_value="changeme.pcd",
+                description="The path to the reference map file",
+            ),
+            DeclareLaunchArgument(
                 "ip_address",
                 default_value="172.17.0.3",
                 description="The IP address of the luci docker container",
@@ -35,7 +37,8 @@ def generate_launch_description():
             DeclareLaunchArgument(
                 "remote_launch",
                 default_value="false",
-                description="Whether or not to launch the luci launch file on the docker container",
+                description="Whether or not to launch the luci launch file on\
+                        the docker container",
             ),
             DeclareLaunchArgument(
                 "sensor_type",
@@ -103,6 +106,9 @@ def generate_launch_description():
                     {
                         "sensor_type": LaunchConfiguration("sensor_type"),
                         "use_pangolin": LaunchConfiguration("use_pangolin"),
+                        "reference_map_file": LaunchConfiguration(
+                            "reference_map_file"
+                        ),
                     }
                 ],
             ),

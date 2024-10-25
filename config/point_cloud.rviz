@@ -6,6 +6,7 @@ Panels:
       Expanded:
         - /Global Options1
         - /Status1
+        - /Map1
         - /LaserScan1
         - /LaserScan1/Topic1
         - /PointCloud22
@@ -29,7 +30,7 @@ Panels:
     Experimental: false
     Name: Time
     SyncMode: 0
-    SyncSource: LaserScan
+    SyncSource: ""
 Visualization Manager:
   Class: ""
   Displays:
@@ -97,13 +98,13 @@ Visualization Manager:
         Filter size: 10
         History Policy: Keep Last
         Reliability Policy: Reliable
-        Value: /map
+        Value: /data_occupancy_grid
       Update Topic:
         Depth: 5
         Durability Policy: Volatile
         History Policy: Keep Last
         Reliability Policy: Reliable
-        Value: /map_updates
+        Value: /data_occupancy_grid_updates
       Use Timestamp: false
       Value: true
     - Class: rviz_default_plugins/MarkerArray
@@ -218,9 +219,11 @@ Visualization Manager:
           Value: true
         camera_link:
           Value: true
+        luci_map:
+          Value: true
         map:
           Value: true
-        odom:
+        orb_map:
           Value: true
         point_cloud:
           Value: true
@@ -233,14 +236,16 @@ Visualization Manager:
       Show Names: true
       Tree:
         world:
+          luci_map:
+            {}
           map:
-            odom:
+            point_cloud:
               base_link:
                 camera_bottom_screw_frame:
                   camera_link:
                     {}
-            point_cloud:
-              {}
+          orb_map:
+            {}
       Update Interval: 0
       Value: true
     - Alpha: 1
