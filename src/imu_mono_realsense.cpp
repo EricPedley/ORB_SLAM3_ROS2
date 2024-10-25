@@ -1,6 +1,6 @@
+#include <pcl/filters/filter.h>
 #include <pcl/io/pcd_io.h>
 #include <pcl/io/ply_io.h>
-#include <pcl/filters/filter.h>
 
 #include <geometry_msgs/msg/pose_array.hpp>
 #include <geometry_msgs/msg/quaternion.hpp>
@@ -134,7 +134,7 @@ public:
 
   ~ImuMonoRealSense()
   {
-    orb_slam3_system_->SavePCDASCII(std::string(PROJECT_PATH) + "/maps/");
+    orb_slam3_system_->SavePCDBinary(std::string(PROJECT_PATH) + "/maps/");
   }
 
 private:
@@ -233,113 +233,11 @@ private:
           if (vImuMeas.size() > 1) {
             auto Tcw =
               orb_slam3_system_->TrackMonocular(imageFrame, tImage, vImuMeas);
-            auto Twc = Tcw.inverse();
-            if (orb_slam3_system_->isImuInitialized()) {
-
-              tf2::Quaternion q_orig(
-                Twc.unit_quaternion().x(), Twc.unit_quaternion().y(),
-                Twc.unit_quaternion().z(), Twc.unit_quaternion().w());
-
-              tf2::Matrix3x3 m(q_orig);
-              double roll, pitch, yaw;
-              m.getRPY(roll, pitch, yaw);
-
-              tf2::Quaternion q_yaw;
-              q_yaw.setRPY(0, 0, yaw);
-
-              tf2::Quaternion q_rot_x, q_rot_z;
-              // q_rot_x.setRPY(M_PI / 2.0, 0, 0);
-              q_rot_z.setRPY(0, 0, M_PI / 2.0);
-
-              tf2::Quaternion q_combined = q_rot_z * q_yaw;
-              q_combined.normalize();
-
-              geometry_msgs::msg::Pose pose;
-              pose.position.x = Twc.translation().x();
-              pose.position.y = Twc.translation().y();
-              // pose.position.z = Twc.translation().z();
-              pose.orientation.x = q_combined.x();
-              pose.orientation.y = q_combined.y();
-              pose.orientation.z = q_combined.z();
-              pose.orientation.w = q_combined.w();
-              pose_array_.header.stamp = time_now;
-              pose_array_.poses.push_back(pose);
-
-              geometry_msgs::msg::TransformStamped base_link_tf;
-              base_link_tf.header.stamp = time_now;
-              base_link_tf.header.frame_id = "point_cloud";
-              base_link_tf.child_frame_id = "base_link";
-              base_link_tf.transform.translation.x = Twc.translation().x();
-              base_link_tf.transform.translation.y = Twc.translation().y();
-              base_link_tf.transform.rotation.x = q_combined.x();
-              base_link_tf.transform.rotation.y = q_combined.y();
-              base_link_tf.transform.rotation.z = q_combined.z();
-              base_link_tf.transform.rotation.w = q_combined.w();
-              tf_broadcaster->sendTransform(base_link_tf);
-
-              tf2::Quaternion q_rot_x2, q_rot_y2;
-              q_rot_x2.setRPY(M_PI / 2.0, 0, 0);
-              q_rot_y2.setRPY(0, -M_PI / 2.0, 0);
-              tf2::Quaternion q_combined2 = q_rot_y2 * q_rot_x2;
-              q_combined2.normalize();
-
-              geometry_msgs::msg::TransformStamped scan_tf;
-              scan_tf.header.stamp = time_now;
-              scan_tf.header.frame_id = "base_link";
-              scan_tf.child_frame_id = "scan";
-              tf_broadcaster->sendTransform(scan_tf);
-
-              geometry_msgs::msg::TransformStamped point_cloud_tf;
-              point_cloud_tf.header.stamp = time_now;
-              point_cloud_tf.header.frame_id = "map";
-              point_cloud_tf.child_frame_id = "point_cloud";
-              tf_broadcaster->sendTransform(point_cloud_tf);
-
-              accumulated_pcl_cloud_ = orb_slam3_system_->GetMapPCL();
-
-              pcl::PointCloud<pcl::PointXYZ>::Ptr accumulated_ptr =
-                std::make_shared<pcl::PointCloud<pcl::PointXYZ>>(
-                  accumulated_pcl_cloud_);
-
-              // voxel grid filter
-              // pcl::PointCloud<pcl::PointXYZ>::Ptr voxel_cloud(
-              //   new pcl::PointCloud<pcl::PointXYZ>);
-              // pcl::VoxelGrid<pcl::PointXYZ> vg;
-              // vg.setInputCloud(accumulated_ptr);
-              // vg.setLeafSize(0.05f, 0.05f, 0.05f);
-              // vg.filter(*voxel_cloud);
-
-              // statistical outlier removal
-              pcl::PointCloud<pcl::PointXYZ>::Ptr sor_cloud(
-                new pcl::PointCloud<pcl::PointXYZ>);
-              pcl::StatisticalOutlierRemoval<pcl::PointXYZ> sor;
-              sor.setInputCloud(accumulated_ptr);
-              sor.setMeanK(100);
-              sor.setStddevMulThresh(0.1);
-              sor.filter(*sor_cloud);
-
-              sor_cloud->width = sor_cloud->points.size();
-              pcl::toROSMsg(*sor_cloud, accumulated_pcl_cloud_msg_);
-
-              accumulated_pcl_cloud_msg_.header.frame_id = "point_cloud";
-              accumulated_pcl_cloud_msg_.header.stamp = time_now;
-            }
+            Tcw_.translation() = Tcw.translation();
+            Tcw_.rotationMatrix() = Tcw.rotationMatrix();
           }
         }
 
-        if (!inertial_ba1_ && orb_slam3_system_->GetInertialBA1()) {
-          inertial_ba1_ = true;
-          pose_array_.poses.clear();
-          pose_array_.header.stamp = time_now;
-          RCLCPP_INFO(get_logger(), "Inertial BA1 complete");
-        }
-
-        if (!inertial_ba2_ && orb_slam3_system_->GetInertialBA2()) {
-          inertial_ba2_ = true;
-          pose_array_.poses.clear();
-          pose_array_.header.stamp = time_now;
-          RCLCPP_INFO(get_logger(), "Inertial BA2 complete");
-        }
       } catch (const std::exception &e) {
         RCLCPP_ERROR(get_logger(), "SLAM processing exception: %s", e.what());
       }
@@ -369,21 +267,110 @@ private:
     unique_lock<mutex> lock(orbslam3_mutex_);
 
     geometry_msgs::msg::Pose pose;
-    if (orb_slam3_system_->isImuInitialized() ||
-        orb_slam3_system_->GetInertialBA1() ||
-        orb_slam3_system_->GetInertialBA2()) {
-      if (pose_array_.poses.size() > 1000) {
-        pose_array_.poses.erase(pose_array_.poses.begin());
-      }
+    if (orb_slam3_system_->isImuInitialized()) {
+      rclcpp::Time time_now = get_clock()->now();
+      auto Twc = Tcw_.inverse();
 
-      // publish the variables I've been accumulating in the image callback
+      tf2::Quaternion q_orig(
+        Twc.unit_quaternion().x(), Twc.unit_quaternion().y(),
+        Twc.unit_quaternion().z(), Twc.unit_quaternion().w());
+
+      tf2::Matrix3x3 m(q_orig);
+      double roll, pitch, yaw;
+      m.getRPY(roll, pitch, yaw);
+
+      tf2::Quaternion q_yaw;
+      q_yaw.setRPY(0, 0, yaw);
+
+      tf2::Quaternion q_rot_x, q_rot_z;
+      // q_rot_x.setRPY(M_PI / 2.0, 0, 0);
+      q_rot_z.setRPY(0, 0, M_PI / 2.0);
+
+      tf2::Quaternion q_combined = q_rot_z * q_yaw;
+      q_combined.normalize();
+
+      geometry_msgs::msg::Pose pose;
+      pose.position.x = Twc.translation().x();
+      pose.position.y = Twc.translation().y();
+      // pose.position.z = Twc.translation().z();
+      pose.orientation.x = q_combined.x();
+      pose.orientation.y = q_combined.y();
+      pose.orientation.z = q_combined.z();
+      pose.orientation.w = q_combined.w();
+      pose_array_.header.stamp = time_now;
+      pose_array_.poses.push_back(pose);
       pose_array_publisher_->publish(pose_array_);
-      accumulated_pcl_cloud_msg_publisher_->publish(accumulated_pcl_cloud_msg_);
 
+      geometry_msgs::msg::TransformStamped base_link_tf;
+      base_link_tf.header.stamp = time_now;
+      base_link_tf.header.frame_id = "point_cloud";
+      base_link_tf.child_frame_id = "base_link";
+      base_link_tf.transform.translation.x = Twc.translation().x();
+      base_link_tf.transform.translation.y = Twc.translation().y();
+      base_link_tf.transform.rotation.x = q_combined.x();
+      base_link_tf.transform.rotation.y = q_combined.y();
+      base_link_tf.transform.rotation.z = q_combined.z();
+      base_link_tf.transform.rotation.w = q_combined.w();
+      tf_broadcaster->sendTransform(base_link_tf);
+
+      geometry_msgs::msg::TransformStamped scan_tf;
+      scan_tf.header.stamp = time_now;
+      scan_tf.header.frame_id = "base_link";
+      scan_tf.child_frame_id = "scan";
+      tf_broadcaster->sendTransform(scan_tf);
+
+      geometry_msgs::msg::TransformStamped point_cloud_tf;
+      point_cloud_tf.header.stamp = time_now;
+      point_cloud_tf.header.frame_id = "map";
+      point_cloud_tf.child_frame_id = "point_cloud";
+      tf_broadcaster->sendTransform(point_cloud_tf);
+
+      accumulated_pcl_cloud_ = orb_slam3_system_->GetMapPCL();
+
+      pcl::PointCloud<pcl::PointXYZ>::Ptr accumulated_ptr =
+        std::make_shared<pcl::PointCloud<pcl::PointXYZ>>(
+          accumulated_pcl_cloud_);
+
+      // voxel grid filter
+      // pcl::PointCloud<pcl::PointXYZ>::Ptr voxel_cloud(
+      //   new pcl::PointCloud<pcl::PointXYZ>);
+      // pcl::VoxelGrid<pcl::PointXYZ> vg;
+      // vg.setInputCloud(accumulated_ptr);
+      // vg.setLeafSize(0.05f, 0.05f, 0.05f);
+      // vg.filter(*voxel_cloud);
+
+      // statistical outlier removal
+      pcl::PointCloud<pcl::PointXYZ>::Ptr sor_cloud(
+        new pcl::PointCloud<pcl::PointXYZ>);
+      pcl::StatisticalOutlierRemoval<pcl::PointXYZ> sor;
+      sor.setInputCloud(accumulated_ptr);
+      sor.setMeanK(100);
+      sor.setStddevMulThresh(0.1);
+      sor.filter(*sor_cloud);
+
+      sor_cloud->width = sor_cloud->points.size();
+      pcl::toROSMsg(*sor_cloud, accumulated_pcl_cloud_msg_);
+
+      accumulated_pcl_cloud_msg_.header.frame_id = "point_cloud";
+      accumulated_pcl_cloud_msg_.header.stamp = time_now;
+      accumulated_pcl_cloud_msg_publisher_->publish(accumulated_pcl_cloud_msg_);
     } else {
       octomap_server_client_->async_send_request(
         std::make_shared<std_srvs::srv::Empty::Request>());
       initialize_variables();
+    }
+    if (!inertial_ba1_ && orb_slam3_system_->GetInertialBA1()) {
+      inertial_ba1_ = true;
+      pose_array_.poses.clear();
+      pose_array_.header.stamp = get_clock()->now();
+      RCLCPP_INFO(get_logger(), "Inertial BA1 complete");
+    }
+
+    if (!inertial_ba2_ && orb_slam3_system_->GetInertialBA2()) {
+      inertial_ba2_ = true;
+      pose_array_.poses.clear();
+      pose_array_.header.stamp = get_clock()->now();
+      RCLCPP_INFO(get_logger(), "Inertial BA2 complete");
     }
   }
 
@@ -431,6 +418,8 @@ private:
 
   bool inertial_ba1_;
   bool inertial_ba2_;
+
+  Sophus::SE3f Tcw_;
 };
 
 int main(int argc, char *argv[])
