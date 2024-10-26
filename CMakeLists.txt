@@ -91,6 +91,10 @@ add_executable(imu_mono_node_cpp
   src/imu_mono_realsense.cpp
 )
 
+add_executable(icp_node
+  src/icp_node.cpp
+)
+
 add_executable(localize_node
     src/localize.cpp
 )
@@ -108,6 +112,10 @@ add_executable(apriltag_node
 )
 
 ament_target_dependencies(imu_mono_node_cpp
+  PUBLIC ${THIS_PACKAGE_INCLUDE_DEPENDS}
+)
+
+ament_target_dependencies(icp_node
   PUBLIC ${THIS_PACKAGE_INCLUDE_DEPENDS}
 )
 
@@ -150,10 +158,11 @@ target_include_directories(imu_mono_node_cpp PUBLIC
 
 target_link_libraries(visualize_point_cloud PUBLIC ${PCL_LIBRARIES})
 target_link_libraries(apriltag_node PUBLIC apriltag::apriltag)
-target_link_libraries(imu_mono_node_cpp PUBLIC ${ORB_SLAM3_LIBRARY})
+target_link_libraries(imu_mono_node_cpp PUBLIC ${ORB_SLAM3_LIBRARY} ${PCL_LIBRARIES} ${libpointmatcher_LIBRARIES} ${libpointmatcher_ros_LIBRARIES})
 target_link_libraries(localize_node PUBLIC ${PCL_LIBRARIES} ${libpointmatcher_LIBRARIES} ${libpointmatcher_ros_LIBRARIES})
+target_link_libraries(icp_node PUBLIC ${PCL_LIBRARIES} ${libpointmatcher_LIBRARIES} ${libpointmatcher_ros_LIBRARIES})
 
-install(TARGETS localize_node apriltag_node visualize_point_cloud capture_video imu_mono_node_cpp # mono_node_cpp example_mono_node_cpp
+install(TARGETS localize_node apriltag_node visualize_point_cloud capture_video icp_node imu_mono_node_cpp # mono_node_cpp example_mono_node_cpp
     DESTINATION lib/${PROJECT_NAME}
 )
 

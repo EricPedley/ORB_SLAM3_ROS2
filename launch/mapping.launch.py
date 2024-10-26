@@ -112,6 +112,12 @@ def generate_launch_description():
                     }
                 ],
             ),
+            Node(
+                package="orb_slam3_ros2",
+                executable="icp_node",
+                output="screen",
+                # prefix="xterm -e gdb --args",
+            ),
             # Node(
             #     package="octomap_server",
             #     executable="octomap_server_node",

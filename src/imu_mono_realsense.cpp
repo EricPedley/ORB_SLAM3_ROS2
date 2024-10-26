@@ -31,6 +31,9 @@
 // this is orb_slam3
 #include "System.h"
 
+#include "pointmatcher/PointMatcher.h"
+#include "pointmatcher_ros/PointMatcher_ROS.h"
+
 #include <rclcpp/rclcpp.hpp>
 
 using namespace std::chrono_literals;
@@ -54,14 +57,27 @@ public:
     sensor_type_param = get_parameter("sensor_type").as_string();
     bool use_pangolin = get_parameter("use_pangolin").as_bool();
     reference_map_file_ = get_parameter("reference_map_file").as_string();
-    reference_map_file_ = std::string(PROJECT_PATH) + "/maps/" + reference_map_file_;
+    reference_map_file_ =
+      std::string(PROJECT_PATH) + "/maps/" + reference_map_file_;
 
     pcl::io::loadPCDFile(reference_map_file_, reference_pcl_cloud_);
     reference_pcl_cloud_.width = reference_pcl_cloud_.points.size();
     RCLCPP_INFO_STREAM(get_logger(),
                        "loaded " << reference_pcl_cloud_.points.size()
                                  << " points from " << reference_map_file_);
-    reference_occupancy_grid_ = std::make_shared<nav_msgs::msg::OccupancyGrid>();
+
+    Eigen::Matrix<float, 4, 1> centroid;
+    pcl::ConstCloudIterator<pcl::PointXYZ> cloud_iterator(reference_pcl_cloud_);
+    pcl::compute3DCentroid(cloud_iterator, centroid);
+
+    for (auto &point : reference_pcl_cloud_.points) {
+      point.x -= centroid[0];
+      point.y -= centroid[1];
+      point.z -= centroid[2];
+    }
+
+    reference_occupancy_grid_ =
+      std::make_shared<nav_msgs::msg::OccupancyGrid>();
     reference_occupancy_grid_ = point_cloud_to_occupancy_grid(
       std::make_shared<pcl::PointCloud<pcl::PointXYZ>>(reference_pcl_cloud_));
 
@@ -73,6 +89,8 @@ public:
     slam_service_callback_group_ =
       create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
     timer_callback_group_ =
+      create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
+    match_timer_callback_group_ =
       create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
     octomap_server_client_callback_group_ =
       create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
@@ -105,14 +123,21 @@ public:
       vocabulary_file_path, settings_file_path, sensor_type, use_pangolin, 0);
 
     // create publishers
-    accumulated_pcl_cloud_msg_publisher_ =
-      create_publisher<sensor_msgs::msg::PointCloud2>("orb_point_cloud2", 10);
+    data_point_cloud_publisher_ =
+      create_publisher<sensor_msgs::msg::PointCloud2>("data_point_cloud", 10);
+    reference_point_cloud_publisher_ =
+      create_publisher<sensor_msgs::msg::PointCloud2>("reference_point_cloud",
+                                                      10);
     pose_array_publisher_ =
       create_publisher<geometry_msgs::msg::PoseArray>("pose_array", 100);
     reference_occupancy_grid_publisher_ =
-      create_publisher<nav_msgs::msg::OccupancyGrid>("reference_occupancy_grid", 10);
+      create_publisher<nav_msgs::msg::OccupancyGrid>("reference_occupancy_grid",
+                                                     10);
     data_occupancy_grid_publisher_ =
       create_publisher<nav_msgs::msg::OccupancyGrid>("data_occupancy_grid", 10);
+    transformed_point_cloud_publisher_ =
+      create_publisher<sensor_msgs::msg::PointCloud2>("transformed_point_cloud",
+                                                      10);
 
     // create subscriptions
     rclcpp::QoS image_qos(rclcpp::KeepLast(10));
@@ -148,8 +173,16 @@ public:
       1000ms, std::bind(&ImuMonoRealSense::timer_callback, this),
       timer_callback_group_);
 
+    match_timer_ = create_wall_timer(
+      1000ms, std::bind(&ImuMonoRealSense::match_timer_callback, this),
+      match_timer_callback_group_);
+
     rclcpp::on_shutdown([this]() {
-      orb_slam3_system_->SavePCDBinary(std::string(PROJECT_PATH) + "/maps/");
+      pcl::io::savePCDFileBinary(std::string(PROJECT_PATH) + "/maps/" +
+                                   generate_timestamp_string() + ".pcd",
+                                 accumulated_pcl_cloud_);
+      // orb_slam3_system_->SavePCDBinary(std::string(PROJECT_PATH) +
+      // "/maps/");
     });
     initialize_variables();
   }
@@ -160,13 +193,65 @@ public:
   // }
 
 private:
+  void match_point_cloud()
+  {
+    std::unique_lock<std::mutex> lock(accumulated_pcl_cloud_mutex_);
+    if (accumulated_pcl_cloud_.points.size() == 0 ||
+        reference_pcl_cloud_.points.size() == 0) {
+      return;
+    }
+    // if (accumulated_pcl_cloud_.points.size() <
+    //     0.5 * reference_pcl_cloud_.points.size()) {
+    //   return;
+    // }
+    RCLCPP_INFO(get_logger(), "Matching point clouds");
+    typedef PointMatcher<float> PM;
+    typedef PM::DataPoints DP;
+    typedef PM::Parameters Parameters;
+    DP data_dp;
+    DP reference_dp;
+    PM::TransformationParameters point_cloud_transform;
+    RCLCPP_INFO(get_logger(), "Converting point clouds to DataPoints");
+    sensor_msgs::msg::PointCloud2 data_pcl_cloud_msg;
+    sensor_msgs::msg::PointCloud2 reference_pcl_cloud_msg;
+    pcl::toROSMsg(accumulated_pcl_cloud_, data_pcl_cloud_msg);
+    pcl::toROSMsg(reference_pcl_cloud_, reference_pcl_cloud_msg);
+
+    RCLCPP_INFO(get_logger(), "converting data_dp");
+    data_pcl_cloud_msg.header.frame_id = "point_cloud";
+    data_pcl_cloud_msg.header.stamp = get_clock()->now();
+    reference_pcl_cloud_msg.header.frame_id = "point_cloud";
+    reference_pcl_cloud_msg.header.stamp = get_clock()->now();
+
+    data_dp =
+      PointMatcher_ROS::rosMsgToPointMatcherCloud<float>(data_pcl_cloud_msg);
+
+    RCLCPP_INFO(get_logger(), "converting reference_dp");
+    reference_dp = PointMatcher_ROS::rosMsgToPointMatcherCloud<float>(
+      reference_pcl_cloud_msg);
+
+    PM::ICP icp;
+    // icp.setDefault();
+
+    // RCLCPP_INFO(get_logger(), "ICP");
+    // point_cloud_transform = icp(data_dp, reference_dp);
+
+    // RCLCPP_INFO(get_logger(), "Transforming data");
+    // PM::DataPoints transformed_data(data_dp);
+    // icp.transformations.apply(transformed_data, point_cloud_transform);
+    //
+    // RCLCPP_INFO(get_logger(), "Publishing transformed data");
+    // sensor_msgs::msg::PointCloud2 transformed_data_pcl_cloud_msg;
+    // transformed_data_pcl_cloud_msg =
+    //   PointMatcher_ROS::pointMatcherCloudToRosMsg<float>(
+    //     transformed_data, "point_cloud", get_clock()->now());
+    // transformed_point_cloud_publisher_->publish(transformed_data_pcl_cloud_msg);
+    // RCLCPP_INFO(get_logger(), "Finished matching point clouds");
+  }
+
   nav_msgs::msg::OccupancyGrid::SharedPtr
   point_cloud_to_occupancy_grid(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud)
   {
-    Eigen::Matrix<float, 4, 1> centroid;
-    pcl::ConstCloudIterator<pcl::PointXYZ> cloud_iterator(*cloud);
-    pcl::compute3DCentroid(cloud_iterator, centroid);
-
     float max_x = -std::numeric_limits<float>::infinity();
     float max_y = -std::numeric_limits<float>::infinity();
     float min_x = std::numeric_limits<float>::infinity();
@@ -231,7 +316,7 @@ private:
 
     std::ostringstream oss;
 
-    oss << std::put_time(ptm, "%Y-%m-%d_%H-%M-%S") << ".mp4";
+    oss << std::put_time(ptm, "%Y-%m-%d_%H-%M-%S");
 
     return oss.str();
   }
@@ -419,6 +504,8 @@ private:
       sor.setStddevMulThresh(0.1);
       sor.filter(*sor_cloud);
 
+      accumulated_pcl_cloud_ = *sor_cloud;
+
       sor_cloud->width = sor_cloud->points.size();
       pcl::toROSMsg(*sor_cloud, accumulated_pcl_cloud_msg_);
 
@@ -442,11 +529,23 @@ private:
       reference_occupancy_grid_->header.stamp = time_now;
       reference_occupancy_grid_->header.frame_id = "orb_map";
       reference_occupancy_grid_publisher_->publish(*reference_occupancy_grid_);
-      RCLCPP_INFO_STREAM(get_logger(), "publishing occupancy grid with " << reference_occupancy_grid_->data.size() << " points");
+      RCLCPP_INFO_STREAM(
+        get_logger(), "publishing occupancy grid with "
+                        << reference_occupancy_grid_->data.size() << " points");
 
       accumulated_pcl_cloud_msg_.header.stamp = time_now;
       accumulated_pcl_cloud_msg_.header.frame_id = "point_cloud";
-      accumulated_pcl_cloud_msg_publisher_->publish(accumulated_pcl_cloud_msg_);
+      data_point_cloud_publisher_->publish(accumulated_pcl_cloud_msg_);
+      RCLCPP_INFO(get_logger(), "published accumulated point cloud");
+
+      sensor_msgs::msg::PointCloud2 reference_pcl_cloud_msg;
+      pcl::toROSMsg(reference_pcl_cloud_, reference_pcl_cloud_msg);
+      reference_pcl_cloud_msg.header.stamp = time_now;
+      reference_pcl_cloud_msg.header.frame_id = "point_cloud";
+      RCLCPP_INFO_STREAM(get_logger(), "publishing reference point cloud with "
+                                         << reference_pcl_cloud_msg.data.size()
+                                         << " points");
+      reference_point_cloud_publisher_->publish(reference_pcl_cloud_msg);
     } else {
       octomap_server_client_->async_send_request(
         std::make_shared<std_srvs::srv::Empty::Request>());
@@ -467,23 +566,35 @@ private:
     }
   }
 
+  void match_timer_callback()
+  {
+    // match_point_cloud();
+  }
+
   rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr image_sub;
   rclcpp::Subscription<sensor_msgs::msg::Imu>::SharedPtr imu_sub;
   rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr
-    accumulated_pcl_cloud_msg_publisher_;
+    data_point_cloud_publisher_;
+  rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr
+    reference_point_cloud_publisher_;
   rclcpp::Publisher<geometry_msgs::msg::PoseArray>::SharedPtr
     pose_array_publisher_;
   rclcpp::Publisher<nav_msgs::msg::OccupancyGrid>::SharedPtr
     reference_occupancy_grid_publisher_;
-  rclcpp::Publisher<nav_msgs::msg::OccupancyGrid>::SharedPtr data_occupancy_grid_publisher_;
+  rclcpp::Publisher<nav_msgs::msg::OccupancyGrid>::SharedPtr
+    data_occupancy_grid_publisher_;
+  rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr
+    transformed_point_cloud_publisher_;
   rclcpp::Service<std_srvs::srv::Empty>::SharedPtr slam_service;
   rclcpp::Client<std_srvs::srv::Empty>::SharedPtr octomap_server_client_;
   rclcpp::TimerBase::SharedPtr timer;
+  rclcpp::TimerBase::SharedPtr match_timer_;
 
   rclcpp::CallbackGroup::SharedPtr image_callback_group_;
   rclcpp::CallbackGroup::SharedPtr imu_callback_group_;
   rclcpp::CallbackGroup::SharedPtr slam_service_callback_group_;
   rclcpp::CallbackGroup::SharedPtr timer_callback_group_;
+  rclcpp::CallbackGroup::SharedPtr match_timer_callback_group_;
   rclcpp::CallbackGroup::SharedPtr octomap_server_client_callback_group_;
 
   std::unique_ptr<tf2_ros::TransformBroadcaster> tf_broadcaster;
@@ -501,7 +612,8 @@ private:
 
   queue<sensor_msgs::msg::Imu::SharedPtr> imu_buf_;
   queue<sensor_msgs::msg::Image::SharedPtr> img_buf_;
-  std::mutex buf_mutex_imu_, buf_mutex_img_, orbslam3_mutex_;
+  std::mutex buf_mutex_imu_, buf_mutex_img_, orbslam3_mutex_,
+    accumulated_pcl_cloud_mutex_;
 
   std::shared_ptr<ORB_SLAM3::System> orb_slam3_system_;
   std::string vocabulary_file_path;
@@ -520,6 +632,10 @@ private:
   Sophus::SE3f Tcw_;
 
   std::string reference_map_file_;
+
+  typedef PointMatcher<float> PM;
+  typedef PM::Parameters Parameters;
+  typedef PM::TransformationParameters TP;
 };
 
 int main(int argc, char *argv[])

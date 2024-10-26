@@ -164,12 +164,9 @@ private:
   pcl::PointCloud<pcl::PointXYZ> reference_cloud_;
 
   typedef PointMatcher<float> PM;
-  typedef PM::DataPoints dp_;
-  typedef PM::Parameters Parameters;
   std::shared_ptr<PM::TransformationParameters> point_cloud_transform_;
   std::shared_ptr<PM::DataPoints> reference_dp_;
   std::shared_ptr<PM::DataPoints> data_dp_;
-  std::shared_ptr<PM::Parameters> params;
 };
 
 int main(int argc, char *argv[])
