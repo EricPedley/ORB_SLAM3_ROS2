@@ -50,6 +50,8 @@ find_package(ORB_SLAM3 REQUIRED)
 find_package(libpointmatcher REQUIRED)
 find_package(libpointmatcher_ros REQUIRED)
 
+message(WARN "using libpointmatcher: ${libpointmatcher_INCLUDE_DIRS}")
+
 if(ORB_SLAM3_LIBRARY)
     message("Found ORB_SLAM3: ${ORB_SLAM3_LIBRARY}")
 else()
@@ -145,6 +147,7 @@ include_directories(
     ${PCL_INCLUDE_DIRS}
     ${libpointmatcher_INCLUDE_DIRS}
     ${libpointmatcher_ros_INCLUDE_DIRS}
+    ${POINTMATCHER_DIR}/include
 )
 message(WARNING "using libpoinitmatcher: ${libpointmatcher_INCLUDE_DIRS}")
 

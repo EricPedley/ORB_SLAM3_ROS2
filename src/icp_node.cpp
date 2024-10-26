@@ -1,5 +1,7 @@
 #include <functional>
 #include <memory>
+#include <pcl/cloud_iterator.h>
+#include <pcl/common/centroid.h>
 #include <string>
 
 #include <nav_msgs/msg/occupancy_grid.hpp>
@@ -48,6 +50,10 @@ public:
 
     // create timer
     timer_ = create_wall_timer(500ms, std::bind(&ICP::timer_callback, this));
+
+    // initialize variables
+    data_occupancy_grid_ = std::make_shared<nav_msgs::msg::OccupancyGrid>();
+    reference_occupancy_grid_ = std::make_shared<nav_msgs::msg::OccupancyGrid>();
   }
 
 private:
@@ -55,36 +61,43 @@ private:
     const sensor_msgs::msg::PointCloud2::SharedPtr msg)
   {
     pcl::fromROSMsg(*msg, reference_pcl_cloud_);
+    reference_occupancy_grid_ = point_cloud_to_occupancy_grid(
+      std::make_shared<pcl::PointCloud<pcl::PointXYZ>>(reference_pcl_cloud_));
   }
   void
   data_point_cloud_callback(const sensor_msgs::msg::PointCloud2::SharedPtr msg)
   {
     pcl::fromROSMsg(*msg, data_pcl_cloud_);
+    data_occupancy_grid_ = point_cloud_to_occupancy_grid(
+      std::make_shared<pcl::PointCloud<pcl::PointXYZ>>(data_pcl_cloud_));
   }
   void match_point_cloud()
   {
+    pcl::PointCloud<pcl::PointXYZ>::Ptr data_og_cloud_ptr;
+    pcl::PointCloud<pcl::PointXYZ>::Ptr reference_og_cloud_ptr;
+    data_og_cloud_ptr = occupancy_grid_to_2d_point_cloud(data_occupancy_grid_);
+    reference_og_cloud_ptr =
+      occupancy_grid_to_2d_point_cloud(reference_occupancy_grid_);
     if (data_pcl_cloud_.points.size() == 0 ||
         reference_pcl_cloud_.points.size() == 0) {
       return;
     }
-    // if (data_pcl_cloud_.points.size() <
+    // if (data_og_cloud_ptr->points.size() <
     //     0.5 * reference_pcl_cloud_.points.size()) {
     //   return;
     // }
-    RCLCPP_INFO(get_logger(), "Matching point clouds");
     typedef PointMatcher<float> PM;
     typedef PM::DataPoints DP;
     typedef PM::Parameters Parameters;
     DP data_dp;
     DP reference_dp;
     PM::TransformationParameters point_cloud_transform;
-    RCLCPP_INFO(get_logger(), "Converting point clouds to DataPoints");
+
     sensor_msgs::msg::PointCloud2 data_pcl_cloud_msg;
     sensor_msgs::msg::PointCloud2 reference_pcl_cloud_msg;
-    pcl::toROSMsg(data_pcl_cloud_, data_pcl_cloud_msg);
-    pcl::toROSMsg(reference_pcl_cloud_, reference_pcl_cloud_msg);
+    pcl::toROSMsg(*data_og_cloud_ptr, data_pcl_cloud_msg);
+    pcl::toROSMsg(*reference_og_cloud_ptr, reference_pcl_cloud_msg);
 
-    RCLCPP_INFO(get_logger(), "converting data_dp");
     data_pcl_cloud_msg.header.frame_id = "point_cloud";
     data_pcl_cloud_msg.header.stamp = get_clock()->now();
     reference_pcl_cloud_msg.header.frame_id = "point_cloud";
@@ -93,14 +106,12 @@ private:
     data_dp =
       PointMatcher_ROS::rosMsgToPointMatcherCloud<float>(data_pcl_cloud_msg);
 
-    RCLCPP_INFO(get_logger(), "converting reference_dp");
     reference_dp = PointMatcher_ROS::rosMsgToPointMatcherCloud<float>(
       reference_pcl_cloud_msg);
 
     PM::ICP icp;
     icp.setDefault();
 
-    RCLCPP_INFO(get_logger(), "ICP");
     point_cloud_transform = icp(data_dp, reference_dp);
 
     point_cloud_transform_.translation.x = point_cloud_transform(0, 3);
@@ -119,22 +130,25 @@ private:
     point_cloud_transform_.rotation.z = tf_quat.z();
     point_cloud_transform_.rotation.w = tf_quat.w();
 
-    RCLCPP_INFO(get_logger(), "Transforming data");
     PM::DataPoints transformed_data(data_dp);
     icp.transformations.apply(transformed_data, point_cloud_transform);
 
-    RCLCPP_INFO(get_logger(), "Publishing transformed data");
     sensor_msgs::msg::PointCloud2 transformed_data_pcl_cloud_msg;
     transformed_data_pcl_cloud_msg =
       PointMatcher_ROS::pointMatcherCloudToRosMsg<float>(
         transformed_data, "point_cloud", get_clock()->now());
     pcl::fromROSMsg(transformed_data_pcl_cloud_msg, transformed_pcl_cloud_);
     transformed_point_cloud_publisher_->publish(transformed_data_pcl_cloud_msg);
-    RCLCPP_INFO(get_logger(), "Finished matching point clouds");
   }
+
   nav_msgs::msg::OccupancyGrid::SharedPtr
-  point_cloud_to_occupancy_grid(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud)
+  point_cloud_to_occupancy_grid(const pcl::PointCloud<pcl::PointXYZ>::Ptr cloud)
   {
+    // calculate the centroid
+    Eigen::Matrix<float, 4, 1> centroid;
+    pcl::ConstCloudIterator<pcl::PointXYZ> cloud_iterator(*cloud);
+    pcl::compute3DCentroid(cloud_iterator, centroid);
+
     float max_x = -std::numeric_limits<float>::infinity();
     float max_y = -std::numeric_limits<float>::infinity();
     float min_x = std::numeric_limits<float>::infinity();
@@ -158,15 +172,15 @@ private:
     nav_msgs::msg::OccupancyGrid::SharedPtr occupancy_grid =
       std::make_shared<nav_msgs::msg::OccupancyGrid>();
     cloud->width = cloud->points.size();
-    occupancy_grid->header.frame_id = "point_cloud";
+    occupancy_grid->header.frame_id = "transformed_map";
     occupancy_grid->header.stamp = get_clock()->now();
     occupancy_grid->info.resolution = 0.1;
     occupancy_grid->info.width =
       std::abs(max_x - min_x) / occupancy_grid->info.resolution + 1;
     occupancy_grid->info.height =
       std::abs(max_y - min_y) / occupancy_grid->info.resolution + 1;
-    occupancy_grid->info.origin.position.x = 0;
-    occupancy_grid->info.origin.position.y = 0;
+    occupancy_grid->info.origin.position.x = min_x;
+    occupancy_grid->info.origin.position.y = min_y;
     occupancy_grid->info.origin.position.z = 0;
     occupancy_grid->info.origin.orientation.x = 0;
     occupancy_grid->info.origin.orientation.y = 0;
@@ -182,6 +196,46 @@ private:
     }
     return occupancy_grid;
   }
+
+  pcl::PointCloud<pcl::PointXYZ>::Ptr occupancy_grid_to_2d_point_cloud(
+    const nav_msgs::msg::OccupancyGrid::SharedPtr occupancy_grid)
+  {
+    pcl::PointCloud<pcl::PointXYZ>::Ptr cloud(
+      new pcl::PointCloud<pcl::PointXYZ>);
+    float resolution = occupancy_grid->info.resolution;
+    float origin_x = occupancy_grid->info.origin.position.x;
+    float origin_y = occupancy_grid->info.origin.position.y;
+    int width = occupancy_grid->info.width;
+    int height = occupancy_grid->info.height;
+
+    // Iterate through each cell in the occupancy grid
+    for (int y = 0; y < height; ++y) {
+      for (int x = 0; x < width; ++x) {
+        // Calculate the index in the occupancy data array
+        int index = y * width + x;
+
+        // Check if this cell is occupied (value of 100)
+        if (occupancy_grid->data[index] == 100) {
+          // Calculate the real-world coordinates of this cell
+          float point_x = origin_x + x * resolution;
+          float point_y = origin_y + y * resolution;
+
+          // Create a new point and add it to the point cloud
+          pcl::PointXYZ point;
+          point.x = point_x;
+          point.y = point_y;
+          point.z = 0.0; // Occupancy grid is 2D, so z is 0
+          cloud->points.push_back(point);
+        }
+      }
+    }
+
+    // Set width and height of the point cloud
+    cloud->width = cloud->points.size();
+    cloud->height = 1; // Unorganized point cloud
+
+    return cloud;
+  }
   void timer_callback()
   {
     match_point_cloud();
@@ -189,7 +243,7 @@ private:
     nav_msgs::msg::OccupancyGrid::SharedPtr occupancy_grid =
       point_cloud_to_occupancy_grid(
         std::make_shared<pcl::PointCloud<pcl::PointXYZ>>(
-          transformed_pcl_cloud_));
+          data_pcl_cloud_));
 
     occupancy_grid_publisher_->publish(*occupancy_grid);
 
@@ -215,6 +269,9 @@ private:
   pcl::PointCloud<pcl::PointXYZ> transformed_pcl_cloud_;
 
   geometry_msgs::msg::Transform point_cloud_transform_;
+
+  nav_msgs::msg::OccupancyGrid::SharedPtr data_occupancy_grid_;
+  nav_msgs::msg::OccupancyGrid::SharedPtr reference_occupancy_grid_;
 
   std::unique_ptr<tf2_ros::TransformBroadcaster> tf_broadcaster;
 };

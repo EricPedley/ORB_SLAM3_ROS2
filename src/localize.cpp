@@ -43,7 +43,7 @@ public:
     pcl::toROSMsg(reference_cloud_, *reference_msg_);
 
     reference_dp_ = std::make_shared<PM::DataPoints>(
-      PointMatcher_ROS::rosMsgToPointMatcherCloud<float>(*reference_msg_));
+      PointMatcher_ROS::rosMsgToPointMatcherCloud<float>(*reference_msg_, false));
 
     // create subscription
     point_cloud_sub_ = create_subscription<sensor_msgs::msg::PointCloud2>(
@@ -111,7 +111,7 @@ private:
     data_msg_ = msg;
 
     data_dp_ = std::make_shared<PM::DataPoints>(
-      PointMatcher_ROS::rosMsgToPointMatcherCloud<float>(*filtered_msg));
+      PointMatcher_ROS::rosMsgToPointMatcherCloud<float>(*filtered_msg, false));
 
     match_point_cloud();
   }

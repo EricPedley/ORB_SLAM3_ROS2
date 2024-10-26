@@ -224,11 +224,11 @@ private:
     reference_pcl_cloud_msg.header.stamp = get_clock()->now();
 
     data_dp =
-      PointMatcher_ROS::rosMsgToPointMatcherCloud<float>(data_pcl_cloud_msg);
+      PointMatcher_ROS::rosMsgToPointMatcherCloud<float>(data_pcl_cloud_msg, false);
 
     RCLCPP_INFO(get_logger(), "converting reference_dp");
     reference_dp = PointMatcher_ROS::rosMsgToPointMatcherCloud<float>(
-      reference_pcl_cloud_msg);
+      reference_pcl_cloud_msg, false);
 
     PM::ICP icp;
     // icp.setDefault();
@@ -252,6 +252,11 @@ private:
   nav_msgs::msg::OccupancyGrid::SharedPtr
   point_cloud_to_occupancy_grid(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud)
   {
+    // calculate the centroid
+    Eigen::Matrix<float, 4, 1> centroid;
+    pcl::ConstCloudIterator<pcl::PointXYZ> cloud_iterator(*cloud);
+    pcl::compute3DCentroid(cloud_iterator, centroid);
+
     float max_x = -std::numeric_limits<float>::infinity();
     float max_y = -std::numeric_limits<float>::infinity();
     float min_x = std::numeric_limits<float>::infinity();
@@ -282,8 +287,8 @@ private:
       std::abs(max_x - min_x) / occupancy_grid->info.resolution + 1;
     occupancy_grid->info.height =
       std::abs(max_y - min_y) / occupancy_grid->info.resolution + 1;
-    occupancy_grid->info.origin.position.x = 0;
-    occupancy_grid->info.origin.position.y = 0;
+    occupancy_grid->info.origin.position.x = min_x;
+    occupancy_grid->info.origin.position.y = min_y;
     occupancy_grid->info.origin.position.z = 0;
     occupancy_grid->info.origin.orientation.x = 0;
     occupancy_grid->info.origin.orientation.y = 0;
@@ -529,22 +534,15 @@ private:
       reference_occupancy_grid_->header.stamp = time_now;
       reference_occupancy_grid_->header.frame_id = "orb_map";
       reference_occupancy_grid_publisher_->publish(*reference_occupancy_grid_);
-      RCLCPP_INFO_STREAM(
-        get_logger(), "publishing occupancy grid with "
-                        << reference_occupancy_grid_->data.size() << " points");
 
       accumulated_pcl_cloud_msg_.header.stamp = time_now;
       accumulated_pcl_cloud_msg_.header.frame_id = "point_cloud";
       data_point_cloud_publisher_->publish(accumulated_pcl_cloud_msg_);
-      RCLCPP_INFO(get_logger(), "published accumulated point cloud");
 
       sensor_msgs::msg::PointCloud2 reference_pcl_cloud_msg;
       pcl::toROSMsg(reference_pcl_cloud_, reference_pcl_cloud_msg);
       reference_pcl_cloud_msg.header.stamp = time_now;
       reference_pcl_cloud_msg.header.frame_id = "point_cloud";
-      RCLCPP_INFO_STREAM(get_logger(), "publishing reference point cloud with "
-                                         << reference_pcl_cloud_msg.data.size()
-                                         << " points");
       reference_point_cloud_publisher_->publish(reference_pcl_cloud_msg);
     } else {
       octomap_server_client_->async_send_request(
