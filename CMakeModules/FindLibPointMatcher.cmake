@@ -5,14 +5,14 @@
 find_path(POINTMATCHER_INCLUDE_DIR
     NAMES pointmatcher/PointMatcher.h
     HINTS
-    ${CMAKE_CURRENT_SOURCE_DIR}/third_party/libpointmatcher/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/libpointmatcher/include
 )
 
 # Adjust this path to where the library is located in your project
 find_library(POINTMATCHER_LIBRARY
     NAMES pointmatcher
     HINTS
-    ${CMAKE_CURRENT_SOURCE_DIR}/third_party/libpointmatcher/lib
+    ${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/libpointmatcher/pointmatcher
 )
 
 # Check if the library and include directories were found
