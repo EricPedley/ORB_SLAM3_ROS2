@@ -1,27 +1,27 @@
 #include <functional>
 #include <memory>
-#include <pcl/cloud_iterator.h>
-#include <pcl/common/centroid.h>
 #include <string>
 
+#include <pcl/cloud_iterator.h>
+#include <pcl/common/centroid.h>
+#include <pcl/filters/radius_outlier_removal.h>
+#include <pcl/filters/statistical_outlier_removal.h>
+#include <pcl_conversions/pcl_conversions.h>
+
+#include <geometry_msgs/msg/transform_stamped.hpp>
 #include <nav_msgs/msg/occupancy_grid.hpp>
 #include <sensor_msgs/msg/point_cloud2.hpp>
-
-#include "pointmatcher/PointMatcher.h"
-#include "pointmatcher_ros/PointMatcher_ROS.h"
-#include <geometry_msgs/msg/transform_stamped.hpp>
-#include <pcl_conversions/pcl_conversions.h>
 #include <tf2/LinearMath/Matrix3x3.h>
 #include <tf2/LinearMath/Quaternion.h>
 #include <tf2_ros/transform_broadcaster.h>
+
+#include "pointmatcher/PointMatcher.h"
+#include "pointmatcher_ros/PointMatcher_ROS.h"
 
 #include "rclcpp/rclcpp.hpp"
 
 using namespace std::chrono_literals;
 using std::placeholders::_1;
-
-/* This example creates a subclass of Node and uses std::bind() to register a
- * member function as a callback from the timer. */
 
 class ICP : public rclcpp::Node {
 public:
@@ -59,6 +59,32 @@ public:
   }
 
 private:
+  pcl::PointCloud<pcl::PointXYZ>::Ptr
+  filter_point_cloud(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud)
+  {
+    // statistical outlier removal
+    pcl::PointCloud<pcl::PointXYZ>::Ptr sor_cloud(
+      new pcl::PointCloud<pcl::PointXYZ>);
+    pcl::StatisticalOutlierRemoval<pcl::PointXYZ> sor;
+    sor.setInputCloud(cloud);
+    sor.setMeanK(100);
+    sor.setStddevMulThresh(0.1);
+    sor.filter(*sor_cloud);
+
+    // radius outlier removal
+    pcl::PointCloud<pcl::PointXYZ>::Ptr radius_cloud(
+      new pcl::PointCloud<pcl::PointXYZ>);
+    pcl::RadiusOutlierRemoval<pcl::PointXYZ> radius_outlier;
+    radius_outlier.setInputCloud(sor_cloud);
+    radius_outlier.setRadiusSearch(
+      0.1); // Adjust based on spacing in the point cloud
+    radius_outlier.setMinNeighborsInRadius(
+      5); // Increase for more aggressive outlier removal
+    radius_outlier.filter(*radius_cloud);
+
+    return radius_cloud;
+  }
+
   typedef PointMatcher<float> PM;
   PM::TransformationParameters parseTranslation(std::string &translation,
                                                 const int cloudDimension)
@@ -140,6 +166,8 @@ private:
     const sensor_msgs::msg::PointCloud2::SharedPtr msg)
   {
     pcl::fromROSMsg(*msg, reference_pcl_cloud_);
+    reference_pcl_cloud_ =
+      *filter_point_cloud(reference_pcl_cloud_.makeShared());
     reference_occupancy_grid_ = point_cloud_to_occupancy_grid(
       std::make_shared<pcl::PointCloud<pcl::PointXYZ>>(reference_pcl_cloud_));
   }
@@ -147,6 +175,7 @@ private:
   data_point_cloud_callback(const sensor_msgs::msg::PointCloud2::SharedPtr msg)
   {
     pcl::fromROSMsg(*msg, data_pcl_cloud_);
+    data_pcl_cloud_ = *filter_point_cloud(data_pcl_cloud_.makeShared());
     data_occupancy_grid_ = point_cloud_to_occupancy_grid(
       std::make_shared<pcl::PointCloud<pcl::PointXYZ>>(data_pcl_cloud_));
   }
@@ -224,10 +253,6 @@ private:
 
     point_cloud_transform = T;
 
-    // point_cloud_transform = icp(data_dp, reference_dp);
-
-    RCLCPP_INFO_STREAM(get_logger(), "Transformation matrix: \n"
-                                       << point_cloud_transform);
     point_cloud_transform_.translation.x = point_cloud_transform(0, 2);
     point_cloud_transform_.translation.y = point_cloud_transform(1, 2);
     point_cloud_transform_.translation.z = 0.0;
@@ -245,12 +270,10 @@ private:
     // PM::DataPoints transformed_data(data_dp);
     // icp.transformations.apply(transformed_data, point_cloud_transform);
 
-    RCLCPP_INFO(get_logger(), "about to transform to ros msg");
     sensor_msgs::msg::PointCloud2 transformed_data_pcl_cloud_msg;
     transformed_data_pcl_cloud_msg =
       PointMatcher_ROS::pointMatcherCloudToRosMsg<float>(
         data_out, "point_cloud", get_clock()->now());
-    RCLCPP_INFO(get_logger(), "transformed to ros msg");
     pcl::fromROSMsg(transformed_data_pcl_cloud_msg, transformed_pcl_cloud_);
     transformed_point_cloud_publisher_->publish(transformed_data_pcl_cloud_msg);
   }

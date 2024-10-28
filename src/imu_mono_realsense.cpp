@@ -2,6 +2,7 @@
 #include <pcl/cloud_iterator.h>
 #include <pcl/common/centroid.h>
 #include <pcl/filters/filter.h>
+#include <pcl/filters/radius_outlier_removal.h>
 #include <pcl/io/pcd_io.h>
 #include <pcl/io/ply_io.h>
 
@@ -65,6 +66,9 @@ public:
     RCLCPP_INFO_STREAM(get_logger(),
                        "loaded " << reference_pcl_cloud_.points.size()
                                  << " points from " << reference_map_file_);
+
+    reference_pcl_cloud_ =
+      *filter_point_cloud(reference_pcl_cloud_.makeShared());
 
     Eigen::Matrix<float, 4, 1> centroid;
     pcl::ConstCloudIterator<pcl::PointXYZ> cloud_iterator(reference_pcl_cloud_);
@@ -181,72 +185,35 @@ public:
       pcl::io::savePCDFileBinary(std::string(PROJECT_PATH) + "/maps/" +
                                    generate_timestamp_string() + ".pcd",
                                  accumulated_pcl_cloud_);
-      // orb_slam3_system_->SavePCDBinary(std::string(PROJECT_PATH) +
-      // "/maps/");
     });
     initialize_variables();
   }
 
-  // ~ImuMonoRealSense()
-  // {
-  //   orb_slam3_system_->SavePCDBinary(std::string(PROJECT_PATH) + "/maps/");
-  // }
-
 private:
-  void match_point_cloud()
+  pcl::PointCloud<pcl::PointXYZ>::Ptr
+  filter_point_cloud(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud)
   {
-    std::unique_lock<std::mutex> lock(accumulated_pcl_cloud_mutex_);
-    if (accumulated_pcl_cloud_.points.size() == 0 ||
-        reference_pcl_cloud_.points.size() == 0) {
-      return;
-    }
-    // if (accumulated_pcl_cloud_.points.size() <
-    //     0.5 * reference_pcl_cloud_.points.size()) {
-    //   return;
-    // }
-    RCLCPP_INFO(get_logger(), "Matching point clouds");
-    typedef PointMatcher<float> PM;
-    typedef PM::DataPoints DP;
-    typedef PM::Parameters Parameters;
-    DP data_dp;
-    DP reference_dp;
-    PM::TransformationParameters point_cloud_transform;
-    RCLCPP_INFO(get_logger(), "Converting point clouds to DataPoints");
-    sensor_msgs::msg::PointCloud2 data_pcl_cloud_msg;
-    sensor_msgs::msg::PointCloud2 reference_pcl_cloud_msg;
-    pcl::toROSMsg(accumulated_pcl_cloud_, data_pcl_cloud_msg);
-    pcl::toROSMsg(reference_pcl_cloud_, reference_pcl_cloud_msg);
+    // statistical outlier removal
+    pcl::PointCloud<pcl::PointXYZ>::Ptr sor_cloud(
+      new pcl::PointCloud<pcl::PointXYZ>);
+    pcl::StatisticalOutlierRemoval<pcl::PointXYZ> sor;
+    sor.setInputCloud(cloud);
+    sor.setMeanK(100);
+    sor.setStddevMulThresh(0.1);
+    sor.filter(*sor_cloud);
 
-    RCLCPP_INFO(get_logger(), "converting data_dp");
-    data_pcl_cloud_msg.header.frame_id = "point_cloud";
-    data_pcl_cloud_msg.header.stamp = get_clock()->now();
-    reference_pcl_cloud_msg.header.frame_id = "point_cloud";
-    reference_pcl_cloud_msg.header.stamp = get_clock()->now();
+    // radius outlier removal
+    pcl::PointCloud<pcl::PointXYZ>::Ptr radius_cloud(
+      new pcl::PointCloud<pcl::PointXYZ>);
+    pcl::RadiusOutlierRemoval<pcl::PointXYZ> radius_outlier;
+    radius_outlier.setInputCloud(sor_cloud);
+    radius_outlier.setRadiusSearch(
+      0.1); // Adjust based on spacing in the point cloud
+    radius_outlier.setMinNeighborsInRadius(
+      5); // Increase for more aggressive outlier removal
+    radius_outlier.filter(*radius_cloud);
 
-    data_dp =
-      PointMatcher_ROS::rosMsgToPointMatcherCloud<float>(data_pcl_cloud_msg, false);
-
-    RCLCPP_INFO(get_logger(), "converting reference_dp");
-    reference_dp = PointMatcher_ROS::rosMsgToPointMatcherCloud<float>(
-      reference_pcl_cloud_msg, false);
-
-    PM::ICP icp;
-    // icp.setDefault();
-
-    // RCLCPP_INFO(get_logger(), "ICP");
-    // point_cloud_transform = icp(data_dp, reference_dp);
-
-    // RCLCPP_INFO(get_logger(), "Transforming data");
-    // PM::DataPoints transformed_data(data_dp);
-    // icp.transformations.apply(transformed_data, point_cloud_transform);
-    //
-    // RCLCPP_INFO(get_logger(), "Publishing transformed data");
-    // sensor_msgs::msg::PointCloud2 transformed_data_pcl_cloud_msg;
-    // transformed_data_pcl_cloud_msg =
-    //   PointMatcher_ROS::pointMatcherCloudToRosMsg<float>(
-    //     transformed_data, "point_cloud", get_clock()->now());
-    // transformed_point_cloud_publisher_->publish(transformed_data_pcl_cloud_msg);
-    // RCLCPP_INFO(get_logger(), "Finished matching point clouds");
+    return radius_cloud;
   }
 
   nav_msgs::msg::OccupancyGrid::SharedPtr
@@ -308,7 +275,7 @@ private:
   void initialize_variables()
   {
     pose_array_ = geometry_msgs::msg::PoseArray();
-    pose_array_.header.frame_id = "point_cloud";
+    pose_array_.header.frame_id = "transformed_map";
 
     accumulated_pcl_cloud_msg_ = sensor_msgs::msg::PointCloud2();
     accumulated_pcl_cloud_msg_.header.frame_id = "point_cloud";
@@ -492,44 +459,16 @@ private:
         std::make_shared<pcl::PointCloud<pcl::PointXYZ>>(
           accumulated_pcl_cloud_);
 
-      // voxel grid filter
-      // pcl::PointCloud<pcl::PointXYZ>::Ptr voxel_cloud(
-      //   new pcl::PointCloud<pcl::PointXYZ>);
-      // pcl::VoxelGrid<pcl::PointXYZ> vg;
-      // vg.setInputCloud(accumulated_ptr);
-      // vg.setLeafSize(0.05f, 0.05f, 0.05f);
-      // vg.filter(*voxel_cloud);
+      filter_point_cloud(accumulated_ptr);
 
-      // statistical outlier removal
-      pcl::PointCloud<pcl::PointXYZ>::Ptr sor_cloud(
-        new pcl::PointCloud<pcl::PointXYZ>);
-      pcl::StatisticalOutlierRemoval<pcl::PointXYZ> sor;
-      sor.setInputCloud(accumulated_ptr);
-      sor.setMeanK(100);
-      sor.setStddevMulThresh(0.1);
-      sor.filter(*sor_cloud);
-
-      accumulated_pcl_cloud_ = *sor_cloud;
-
-      sor_cloud->width = sor_cloud->points.size();
-      pcl::toROSMsg(*sor_cloud, accumulated_pcl_cloud_msg_);
+      accumulated_ptr->width = accumulated_ptr->points.size();
+      pcl::toROSMsg(*accumulated_ptr, accumulated_pcl_cloud_msg_);
 
       geometry_msgs::msg::TransformStamped orb_map_tf;
       orb_map_tf.header.stamp = time_now;
       orb_map_tf.header.frame_id = "world";
       orb_map_tf.child_frame_id = "orb_map";
       tf_broadcaster->sendTransform(orb_map_tf);
-
-      geometry_msgs::msg::TransformStamped luci_map_tf;
-      luci_map_tf.header.stamp = time_now;
-      luci_map_tf.header.frame_id = "world";
-      luci_map_tf.child_frame_id = "luci_map";
-      tf_broadcaster->sendTransform(luci_map_tf);
-
-      nav_msgs::msg::OccupancyGrid::SharedPtr data_occupancy_grid =
-        point_cloud_to_occupancy_grid(sor_cloud);
-      data_occupancy_grid->header.frame_id = "luci_map";
-      data_occupancy_grid_publisher_->publish(*data_occupancy_grid);
 
       reference_occupancy_grid_->header.stamp = time_now;
       reference_occupancy_grid_->header.frame_id = "orb_map";

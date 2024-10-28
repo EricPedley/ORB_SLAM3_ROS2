@@ -1,5 +1,5 @@
 readingDataPointsFilters:
- - ProjectOrthoDataPointsFilter
+ # - ProjectOrthoDataPointsFilter
  - SimpleSensorNoiseDataPointsFilter
  - SurfaceNormalDataPointsFilter:
      knn: 5
@@ -12,7 +12,7 @@ readingDataPointsFilters:
 
 
 referenceDataPointsFilters:
- - ProjectOrthoDataPointsFilter
+ # - ProjectOrthoDataPointsFilter
  - SimpleSensorNoiseDataPointsFilter
  - SurfaceNormalDataPointsFilter:
      knn: 5
