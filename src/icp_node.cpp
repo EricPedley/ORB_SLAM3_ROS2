@@ -9,9 +9,8 @@
 
 #include "pointmatcher/PointMatcher.h"
 #include "pointmatcher_ros/PointMatcher_ROS.h"
-#include <pcl_conversions/pcl_conversions.h>
-
 #include <geometry_msgs/msg/transform_stamped.hpp>
+#include <pcl_conversions/pcl_conversions.h>
 #include <tf2/LinearMath/Matrix3x3.h>
 #include <tf2/LinearMath/Quaternion.h>
 #include <tf2_ros/transform_broadcaster.h>
@@ -26,7 +25,9 @@ using std::placeholders::_1;
 
 class ICP : public rclcpp::Node {
 public:
-  ICP() : Node("icp_node")
+  ICP()
+    : Node("icp_node"), init_translation_("0,0,0"),
+      init_rotation_("1,0,0;0,1,0;0,0,1")
   {
     // create publishers
     transformed_point_cloud_publisher_ =
@@ -53,10 +54,88 @@ public:
 
     // initialize variables
     data_occupancy_grid_ = std::make_shared<nav_msgs::msg::OccupancyGrid>();
-    reference_occupancy_grid_ = std::make_shared<nav_msgs::msg::OccupancyGrid>();
+    reference_occupancy_grid_ =
+      std::make_shared<nav_msgs::msg::OccupancyGrid>();
   }
 
 private:
+  typedef PointMatcher<float> PM;
+  PM::TransformationParameters parseTranslation(std::string &translation,
+                                                const int cloudDimension)
+  {
+    PM::TransformationParameters parsedTranslation;
+    parsedTranslation = PM::TransformationParameters::Identity(
+      cloudDimension + 1, cloudDimension + 1);
+
+    translation.erase(std::remove(translation.begin(), translation.end(), '['),
+                      translation.end());
+    translation.erase(std::remove(translation.begin(), translation.end(), ']'),
+                      translation.end());
+    std::replace(translation.begin(), translation.end(), ',', ' ');
+    std::replace(translation.begin(), translation.end(), ';', ' ');
+
+    float translationValues[3] = {0};
+    std::stringstream translationStringStream(translation);
+    for (int i = 0; i < cloudDimension; i++) {
+      if (!(translationStringStream >> translationValues[i])) {
+        std::cerr << "An error occured while trying to parse the initial "
+                  << "translation." << std::endl
+                  << "No initial translation will be used" << std::endl;
+        return parsedTranslation;
+      }
+    }
+    float extraOutput = 0;
+    if ((translationStringStream >> extraOutput)) {
+      std::cerr << "Wrong initial translation size" << std::endl
+                << "No initial translation will be used" << std::endl;
+      return parsedTranslation;
+    }
+
+    for (int i = 0; i < cloudDimension; i++) {
+      parsedTranslation(i, cloudDimension) = translationValues[i];
+    }
+
+    return parsedTranslation;
+  }
+
+  PM::TransformationParameters parseRotation(std::string &rotation,
+                                             const int cloudDimension)
+  {
+    PM::TransformationParameters parsedRotation;
+    parsedRotation = PM::TransformationParameters::Identity(cloudDimension + 1,
+                                                            cloudDimension + 1);
+
+    rotation.erase(std::remove(rotation.begin(), rotation.end(), '['),
+                   rotation.end());
+    rotation.erase(std::remove(rotation.begin(), rotation.end(), ']'),
+                   rotation.end());
+    std::replace(rotation.begin(), rotation.end(), ',', ' ');
+    std::replace(rotation.begin(), rotation.end(), ';', ' ');
+
+    float rotationMatrix[9] = {0};
+    std::stringstream rotationStringStream(rotation);
+    for (int i = 0; i < cloudDimension * cloudDimension; i++) {
+      if (!(rotationStringStream >> rotationMatrix[i])) {
+        std::cerr << "An error occured while trying to parse the initial "
+                  << "rotation." << std::endl
+                  << "No initial rotation will be used" << std::endl;
+        return parsedRotation;
+      }
+    }
+    float extraOutput = 0;
+    if ((rotationStringStream >> extraOutput)) {
+      std::cerr << "Wrong initial rotation size" << std::endl
+                << "No initial rotation will be used" << std::endl;
+      return parsedRotation;
+    }
+
+    for (int i = 0; i < cloudDimension * cloudDimension; i++) {
+      parsedRotation(i / cloudDimension, i % cloudDimension) =
+        rotationMatrix[i];
+    }
+
+    return parsedRotation;
+  }
   void reference_point_cloud_callback(
     const sensor_msgs::msg::PointCloud2::SharedPtr msg)
   {
@@ -73,8 +152,8 @@ private:
   }
   void match_point_cloud()
   {
-    pcl::PointCloud<pcl::PointXYZ>::Ptr data_og_cloud_ptr;
-    pcl::PointCloud<pcl::PointXYZ>::Ptr reference_og_cloud_ptr;
+    pcl::PointCloud<pcl::PointXY>::Ptr data_og_cloud_ptr;
+    pcl::PointCloud<pcl::PointXY>::Ptr reference_og_cloud_ptr;
     data_og_cloud_ptr = occupancy_grid_to_2d_point_cloud(data_occupancy_grid_);
     reference_og_cloud_ptr =
       occupancy_grid_to_2d_point_cloud(reference_occupancy_grid_);
@@ -86,13 +165,6 @@ private:
     //     0.5 * reference_pcl_cloud_.points.size()) {
     //   return;
     // }
-    typedef PointMatcher<float> PM;
-    typedef PM::DataPoints DP;
-    typedef PM::Parameters Parameters;
-    DP data_dp;
-    DP reference_dp;
-    PM::TransformationParameters point_cloud_transform;
-
     sensor_msgs::msg::PointCloud2 data_pcl_cloud_msg;
     sensor_msgs::msg::PointCloud2 reference_pcl_cloud_msg;
     pcl::toROSMsg(*data_og_cloud_ptr, data_pcl_cloud_msg);
@@ -103,26 +175,66 @@ private:
     reference_pcl_cloud_msg.header.frame_id = "point_cloud";
     reference_pcl_cloud_msg.header.stamp = get_clock()->now();
 
-    data_dp =
-      PointMatcher_ROS::rosMsgToPointMatcherCloud<float>(data_pcl_cloud_msg);
+    data_dp = PointMatcher_ROS::rosMsgToPointMatcherCloud<float>(
+      data_pcl_cloud_msg, true);
 
     reference_dp = PointMatcher_ROS::rosMsgToPointMatcherCloud<float>(
-      reference_pcl_cloud_msg);
+      reference_pcl_cloud_msg, true);
 
-    PM::ICP icp;
+    std::string config_file =
+      std::string(PROJECT_PATH) + "/config/pointmatcher_config.yaml";
+    std::ifstream ifs(config_file.c_str());
+    if (!ifs.good()) {
+      RCLCPP_ERROR(get_logger(), "Cannot open config file %s",
+                   config_file.c_str());
+      return;
+    }
+    // icp.loadFromYaml(ifs);
     icp.setDefault();
 
-    point_cloud_transform = icp(data_dp, reference_dp);
+    int cloud_dimension = reference_dp.getEuclideanDim();
 
-    point_cloud_transform_.translation.x = point_cloud_transform(0, 3);
-    point_cloud_transform_.translation.y = point_cloud_transform(1, 3);
-    point_cloud_transform_.translation.z = point_cloud_transform(2, 3);
-    tf2::Matrix3x3 tf_rot(
-      point_cloud_transform(0, 0), point_cloud_transform(0, 1),
-      point_cloud_transform(0, 2), point_cloud_transform(1, 0),
-      point_cloud_transform(1, 1), point_cloud_transform(1, 2),
-      point_cloud_transform(2, 0), point_cloud_transform(2, 1),
-      point_cloud_transform(2, 2));
+    PM::TransformationParameters translation =
+      parseTranslation(init_translation_, cloud_dimension);
+    PM::TransformationParameters rotation =
+      parseRotation(init_rotation_, cloud_dimension);
+    PM::TransformationParameters initTransfo = translation * rotation;
+
+    std::shared_ptr<PM::Transformation> rigidTrans;
+    rigidTrans = PM::get().REG(Transformation).create("RigidTransformation");
+
+    if (!rigidTrans->checkParameters(initTransfo)) {
+      std::cerr << std::endl
+                << "Initial transformation is not rigid, identiy will be used"
+                << std::endl;
+      initTransfo = PM::TransformationParameters::Identity(cloud_dimension + 1,
+                                                           cloud_dimension + 1);
+    }
+
+    const DP initializedData = rigidTrans->compute(data_dp, initTransfo);
+
+    // Compute the transformation to express data in ref
+    PM::TransformationParameters T = icp(initializedData, reference_dp);
+    std::cout << "match ratio: "
+              << icp.errorMinimizer->getWeightedPointUsedRatio() << std::endl;
+
+    // Transform data to express it in ref
+    DP data_out(initializedData);
+    icp.transformations.apply(data_out, T);
+
+    point_cloud_transform = T;
+
+    // point_cloud_transform = icp(data_dp, reference_dp);
+
+    RCLCPP_INFO_STREAM(get_logger(), "Transformation matrix: \n"
+                                       << point_cloud_transform);
+    point_cloud_transform_.translation.x = point_cloud_transform(0, 2);
+    point_cloud_transform_.translation.y = point_cloud_transform(1, 2);
+    point_cloud_transform_.translation.z = 0.0;
+    tf2::Matrix3x3 tf_rot(point_cloud_transform(0, 0),
+                          point_cloud_transform(0, 1), 0.0,
+                          point_cloud_transform(1, 0),
+                          point_cloud_transform(1, 1), 0.0, 0.0, 0.0, 1.0);
     tf2::Quaternion tf_quat;
     tf_rot.getRotation(tf_quat);
     point_cloud_transform_.rotation.x = tf_quat.x();
@@ -130,13 +242,15 @@ private:
     point_cloud_transform_.rotation.z = tf_quat.z();
     point_cloud_transform_.rotation.w = tf_quat.w();
 
-    PM::DataPoints transformed_data(data_dp);
-    icp.transformations.apply(transformed_data, point_cloud_transform);
+    // PM::DataPoints transformed_data(data_dp);
+    // icp.transformations.apply(transformed_data, point_cloud_transform);
 
+    RCLCPP_INFO(get_logger(), "about to transform to ros msg");
     sensor_msgs::msg::PointCloud2 transformed_data_pcl_cloud_msg;
     transformed_data_pcl_cloud_msg =
       PointMatcher_ROS::pointMatcherCloudToRosMsg<float>(
-        transformed_data, "point_cloud", get_clock()->now());
+        data_out, "point_cloud", get_clock()->now());
+    RCLCPP_INFO(get_logger(), "transformed to ros msg");
     pcl::fromROSMsg(transformed_data_pcl_cloud_msg, transformed_pcl_cloud_);
     transformed_point_cloud_publisher_->publish(transformed_data_pcl_cloud_msg);
   }
@@ -197,11 +311,10 @@ private:
     return occupancy_grid;
   }
 
-  pcl::PointCloud<pcl::PointXYZ>::Ptr occupancy_grid_to_2d_point_cloud(
+  pcl::PointCloud<pcl::PointXY>::Ptr occupancy_grid_to_2d_point_cloud(
     const nav_msgs::msg::OccupancyGrid::SharedPtr occupancy_grid)
   {
-    pcl::PointCloud<pcl::PointXYZ>::Ptr cloud(
-      new pcl::PointCloud<pcl::PointXYZ>);
+    pcl::PointCloud<pcl::PointXY>::Ptr cloud(new pcl::PointCloud<pcl::PointXY>);
     float resolution = occupancy_grid->info.resolution;
     float origin_x = occupancy_grid->info.origin.position.x;
     float origin_y = occupancy_grid->info.origin.position.y;
@@ -221,10 +334,10 @@ private:
           float point_y = origin_y + y * resolution;
 
           // Create a new point and add it to the point cloud
-          pcl::PointXYZ point;
+          pcl::PointXY point;
           point.x = point_x;
           point.y = point_y;
-          point.z = 0.0; // Occupancy grid is 2D, so z is 0
+          // point.z = 0.0; // Occupancy grid is 2D, so z is 0
           cloud->points.push_back(point);
         }
       }
@@ -242,8 +355,7 @@ private:
 
     nav_msgs::msg::OccupancyGrid::SharedPtr occupancy_grid =
       point_cloud_to_occupancy_grid(
-        std::make_shared<pcl::PointCloud<pcl::PointXYZ>>(
-          data_pcl_cloud_));
+        std::make_shared<pcl::PointCloud<pcl::PointXYZ>>(data_pcl_cloud_));
 
     occupancy_grid_publisher_->publish(*occupancy_grid);
 
@@ -274,6 +386,15 @@ private:
   nav_msgs::msg::OccupancyGrid::SharedPtr reference_occupancy_grid_;
 
   std::unique_ptr<tf2_ros::TransformBroadcaster> tf_broadcaster;
+
+  typedef PM::DataPoints DP;
+  typedef PM::Parameters Parameters;
+  PM::ICP icp;
+  DP data_dp;
+  DP reference_dp;
+  PM::TransformationParameters point_cloud_transform;
+  std::string init_translation_;
+  std::string init_rotation_;
 };
 
 int main(int argc, char *argv[])

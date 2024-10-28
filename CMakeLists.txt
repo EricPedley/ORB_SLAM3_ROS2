@@ -21,6 +21,11 @@ set(ENV{PROJECT_PATH} "${PROJECT_SOURCE_DIR}")
 add_definitions(-DPROJECT_PATH="${PROJECT_SOURCE_DIR}")
 add_definitions(${PCL_DEFINITIONS})
 
+set(USER_HOME $ENV{HOME})
+set(CMAKE_PREFIX_PATH "${USER_HOME}/.local/include/libpointmatcher/share/libpointmatcher/cmake;${CMAKE_PREFIX_PATH}")
+
+message(WARNING "CMAKE_PREFIX_PATH: ${CMAKE_PREFIX_PATH}")
+
 # find dependencies
 find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
@@ -49,6 +54,9 @@ find_package(PCL 1.12 REQUIRED)
 find_package(ORB_SLAM3 REQUIRED)
 find_package(libpointmatcher REQUIRED)
 find_package(libpointmatcher_ros REQUIRED)
+
+message("libpointmatcher_INCLUDE_DIRS: ${libpointmatcher_INCLUDE_DIRS}")
+message("libpointmatcher_LIBRARIES: ${libpointmatcher_LIBRARIES}")
 
 if(ORB_SLAM3_LIBRARY)
     message("Found ORB_SLAM3: ${ORB_SLAM3_LIBRARY}")
@@ -146,7 +154,6 @@ include_directories(
     ${libpointmatcher_INCLUDE_DIRS}
     ${libpointmatcher_ros_INCLUDE_DIRS}
 )
-message(WARNING "using libpoinitmatcher: ${libpointmatcher_INCLUDE_DIRS}")
 
 link_directories(
     include
