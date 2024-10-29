@@ -25,9 +25,9 @@ def generate_launch_description():
     return LaunchDescription(
         [
             DeclareLaunchArgument(
-                "reference_map_file",
-                default_value="changeme.pcd",
-                description="The path to the reference map file",
+                "use_rviz",
+                default_value="true",
+                description="Whether to launch RViz.",
             ),
             DeclareLaunchArgument(
                 "ip_address",
@@ -106,33 +106,9 @@ def generate_launch_description():
                     {
                         "sensor_type": LaunchConfiguration("sensor_type"),
                         "use_pangolin": LaunchConfiguration("use_pangolin"),
-                        "reference_map_file": LaunchConfiguration(
-                            "reference_map_file"
-                        ),
                     }
                 ],
             ),
-            Node(
-                package="orb_slam3_ros2",
-                executable="icp_node",
-                output="screen",
-                # prefix="xterm -e gdb --args",
-            ),
-            # Node(
-            #     package="octomap_server",
-            #     executable="octomap_server_node",
-            #     output="screen",
-            #     parameters=[
-            #         {
-            #             "resolution": 0.05,
-            #             "frame_id": "map",
-            #             "sensor_model.max_range": 100.0,
-            #             # "filter_ground_plane": True,
-            #         }
-            #     ],
-            #     remappings=[("cloud_in", "orb_point_cloud2"),
-            #                 ("projected_map", "map")],
-            # ),
             Node(
                 package="robot_state_publisher",
                 executable="robot_state_publisher",
@@ -180,6 +156,11 @@ def generate_launch_description():
                         ]
                     ),
                 ],
+                condition=IfCondition(
+                    PythonExpression(
+                        ["'", LaunchConfiguration("use_rviz"), "' == 'true'"]
+                    )
+                ),
             ),
             ExecuteProcess(
                 cmd=[

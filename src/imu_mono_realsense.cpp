@@ -1,19 +1,18 @@
 #include <pcl/cloud_iterator.h>
 #include <pcl/common/centroid.h>
-#include <pcl/conversions.h>
 #include <pcl/filters/filter.h>
 #include <pcl/filters/radius_outlier_removal.h>
 #include <pcl/io/pcd_io.h>
 #include <pcl/io/ply_io.h>
+#include <pcl/filters/statistical_outlier_removal.h>
+#include <pcl/filters/voxel_grid.h>
+#include <pcl_conversions/pcl_conversions.h>
 
 #include <geometry_msgs/msg/pose_array.hpp>
 #include <geometry_msgs/msg/quaternion.hpp>
 #include <geometry_msgs/msg/vector3.hpp>
 #include <nav_msgs/msg/occupancy_grid.hpp>
 #include <nav_msgs/msg/odometry.hpp>
-#include <pcl/filters/statistical_outlier_removal.h>
-#include <pcl/filters/voxel_grid.h>
-#include <pcl_conversions/pcl_conversions.h>
 #include <rclcpp/callback_group.hpp>
 #include <rclcpp/logging.hpp>
 #include <rmw/qos_profiles.h>
@@ -95,16 +94,12 @@ public:
       vocabulary_file_path, settings_file_path, sensor_type, use_pangolin, 0);
 
     // create publishers
-    data_point_cloud_publisher_ =
-      create_publisher<sensor_msgs::msg::PointCloud2>("data_point_cloud", 10);
-    reference_point_cloud_publisher_ =
-      create_publisher<sensor_msgs::msg::PointCloud2>("reference_point_cloud",
-                                                      10);
+    live_point_cloud_publisher_ =
+      create_publisher<sensor_msgs::msg::PointCloud2>("live_point_cloud", 10);
+    live_occupancy_grid_publisher_ =
+      create_publisher<nav_msgs::msg::OccupancyGrid>("live_occupancy_grid", 10);
     pose_array_publisher_ =
       create_publisher<geometry_msgs::msg::PoseArray>("pose_array", 100);
-    live_occupancy_grid_publisher_ =
-      create_publisher<nav_msgs::msg::OccupancyGrid>("live_occupancy_grid",
-                                                     10);
     // create subscriptions
     rclcpp::QoS image_qos(rclcpp::KeepLast(10));
     image_qos.reliability(RMW_QOS_POLICY_RELIABILITY_RELIABLE);
@@ -125,7 +120,7 @@ public:
 
     // create timer
     timer = create_wall_timer(
-      1000ms, std::bind(&ImuMonoRealSense::timer_callback, this),
+      500ms, std::bind(&ImuMonoRealSense::timer_callback, this),
       timer_callback_group_);
 
     rclcpp::on_shutdown([this]() {
@@ -222,10 +217,10 @@ private:
   void initialize_variables()
   {
     pose_array_ = geometry_msgs::msg::PoseArray();
-    pose_array_.header.frame_id = "live_map";
+    pose_array_.header.frame_id = "transformed_map";
 
     live_pcl_cloud_msg_ = sensor_msgs::msg::PointCloud2();
-    live_pcl_cloud_msg_.header.frame_id = "point_cloud";
+    live_pcl_cloud_msg_.header.frame_id = "live_map";
 
     live_occupancy_grid_ = std::make_shared<nav_msgs::msg::OccupancyGrid>();
   }
@@ -422,7 +417,7 @@ private:
 
       live_pcl_cloud_msg_.header.stamp = time_now;
       live_pcl_cloud_msg_.header.frame_id = "live_map";
-      data_point_cloud_publisher_->publish(live_pcl_cloud_msg_);
+      live_point_cloud_publisher_->publish(live_pcl_cloud_msg_);
     } else {
       initialize_variables();
     }
@@ -442,9 +437,7 @@ private:
   rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr image_sub;
   rclcpp::Subscription<sensor_msgs::msg::Imu>::SharedPtr imu_sub;
   rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr
-    data_point_cloud_publisher_;
-  rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr
-    reference_point_cloud_publisher_;
+    live_point_cloud_publisher_;
   rclcpp::Publisher<geometry_msgs::msg::PoseArray>::SharedPtr
     pose_array_publisher_;
   rclcpp::Publisher<nav_msgs::msg::OccupancyGrid>::SharedPtr
@@ -462,7 +455,6 @@ private:
   geometry_msgs::msg::PoseArray pose_array_;
 
   std::string sensor_type_param;
-  std::string reference_map_file_;
   bool use_pangolin;
 
   std::vector<geometry_msgs::msg::Vector3> vGyro;

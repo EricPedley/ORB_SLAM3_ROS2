@@ -99,55 +99,15 @@ add_executable(imu_mono_node_cpp
   src/imu_mono_realsense.cpp
 )
 
-add_executable(icp_orb_slam3_node
-  src/icp_orb_slam3.cpp
-)
-
-add_executable(icp_luci_node
-  src/icp_luci.cpp
-)
-
-add_executable(localize_node
-    src/localize.cpp
-)
-
-add_executable(capture_video
-    src/capture_realsense_video.cpp
-)
-
-add_executable(visualize_point_cloud
-    src/visualize_point_cloud.cpp
-)
-
-add_executable(apriltag_node
-    src/apriltag_node.cpp
+add_executable(icp_localization_node
+  src/icp_localization.cpp
 )
 
 ament_target_dependencies(imu_mono_node_cpp
   PUBLIC ${THIS_PACKAGE_INCLUDE_DEPENDS}
 )
 
-ament_target_dependencies(icp_orb_slam3_node
-  PUBLIC ${THIS_PACKAGE_INCLUDE_DEPENDS}
-)
-
-ament_target_dependencies(icp_luci_node
-  PUBLIC ${THIS_PACKAGE_INCLUDE_DEPENDS}
-)
-
-ament_target_dependencies(localize_node
-    PUBLIC ${THIS_PACKAGE_INCLUDE_DEPENDS}
-)
-
-ament_target_dependencies(capture_video
-  PUBLIC ${THIS_PACKAGE_INCLUDE_DEPENDS}
-)
-
-ament_target_dependencies(visualize_point_cloud
-  PUBLIC ${THIS_PACKAGE_INCLUDE_DEPENDS}
-)
-
-ament_target_dependencies(apriltag_node
+ament_target_dependencies(icp_localization_node
   PUBLIC ${THIS_PACKAGE_INCLUDE_DEPENDS}
 )
 
@@ -171,14 +131,10 @@ target_include_directories(imu_mono_node_cpp PUBLIC
     ${ORB_SLAM3_INCLUDE_DIR}
 )
 
-target_link_libraries(visualize_point_cloud PUBLIC ${PCL_LIBRARIES})
-target_link_libraries(apriltag_node PUBLIC apriltag::apriltag)
 target_link_libraries(imu_mono_node_cpp PUBLIC ${ORB_SLAM3_LIBRARY} ${PCL_LIBRARIES} ${libpointmatcher_LIBRARIES} ${libpointmatcher_ros_LIBRARIES})
-target_link_libraries(localize_node PUBLIC ${PCL_LIBRARIES} ${libpointmatcher_LIBRARIES} ${libpointmatcher_ros_LIBRARIES})
-target_link_libraries(icp_orb_slam3_node PUBLIC ${PCL_LIBRARIES} ${libpointmatcher_LIBRARIES} ${libpointmatcher_ros_LIBRARIES})
-target_link_libraries(icp_luci_node PUBLIC ${PCL_LIBRARIES} ${libpointmatcher_LIBRARIES} ${libpointmatcher_ros_LIBRARIES})
+target_link_libraries(icp_localization_node PUBLIC ${PCL_LIBRARIES} ${libpointmatcher_LIBRARIES} ${libpointmatcher_ros_LIBRARIES})
 
-install(TARGETS localize_node apriltag_node visualize_point_cloud capture_video icp_orb_slam3_node icp_luci_node imu_mono_node_cpp # mono_node_cpp example_mono_node_cpp
+install(TARGETS icp_localization_node imu_mono_node_cpp
     DESTINATION lib/${PROJECT_NAME}
 )
 
@@ -212,16 +168,6 @@ install(
 install(
   DIRECTORY config/
   DESTINATION share/${PROJECT_NAME}/config
-)
-
-install(
-    DIRECTORY urdf/
-    DESTINATION share/${PROJECT_NAME}/urdf
-)
-
-install(
-    DIRECTORY meshes/
-    DESTINATION share/${PROJECT_NAME}/meshes
 )
 
 # install video files

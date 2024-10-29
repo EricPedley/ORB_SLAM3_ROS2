@@ -29,37 +29,58 @@ public:
     : Node("icp_node"), init_translation_("0,0,0"),
       init_rotation_("1,0,0;0,1,0;0,0,1")
   {
+    // declare parameters
+    declare_parameter("reference_map_file", "changeme.pcd");
+
+    // get parameters
+    reference_map_file = get_parameter("reference_map_file").as_string();
+    reference_map_file =
+      std::string(PROJECT_PATH) + "/maps/" + reference_map_file;
+
+    // load reference point cloud
+    pcl::PointCloud<pcl::PointXYZ> tmp_cloud;
+    if (pcl::io::loadPCDFile<pcl::PointXYZ>(reference_map_file, tmp_cloud) ==
+        -1) {
+      RCLCPP_ERROR_STREAM(get_logger(),
+                          "Couldn't read file " << reference_map_file);
+    }
+
+    // filter point cloud
+    reference_pcl_cloud_ = filter_point_cloud(
+      std::make_shared<pcl::PointCloud<pcl::PointXYZ>>(tmp_cloud));
+
+    // convert point cloud to occupancy grid
+    reference_occupancy_grid_ = point_cloud_to_occupancy_grid(
+      std::make_shared<pcl::PointCloud<pcl::PointXYZ>>(reference_pcl_cloud_),
+      "reference_map");
+    reference_occupancy_grid_->header.frame_id = "reference_map";
+
     // create publishers
-    transformed_point_cloud_publisher_ =
-      create_publisher<sensor_msgs::msg::PointCloud2>("transformed_point_cloud",
-                                                      10);
-    occupancy_grid_publisher_ = create_publisher<nav_msgs::msg::OccupancyGrid>(
-      "transformed_occupancy_grid", 10);
+    transformed_occupancy_grid_publisher_ =
+      create_publisher<nav_msgs::msg::OccupancyGrid>(
+        "transformed_occupancy_grid", 10);
+    reference_occupancy_grid_publisher_ =
+      create_publisher<nav_msgs::msg::OccupancyGrid>("reference_occupancy_grid",
+                                                     10);
 
     // create subscriptions
-    reference_point_cloud_subscriber_ =
-      create_subscription<sensor_msgs::msg::PointCloud2>(
-        "reference_point_cloud", 10,
-        std::bind(&ICP::reference_point_cloud_callback, this, _1));
-    data_point_cloud_subscriber_ =
-      create_subscription<sensor_msgs::msg::PointCloud2>(
-        "data_point_cloud", 10,
-        std::bind(&ICP::data_point_cloud_callback, this, _1));
+    live_occupancy_grid_subscriber_ =
+      create_subscription<nav_msgs::msg::OccupancyGrid>(
+        "live_occupancy_grid", 10,
+        std::bind(&ICP::live_occupancy_grid_callback, this, _1));
 
     // create tf broadcaster
     tf_broadcaster = std::make_unique<tf2_ros::TransformBroadcaster>(*this);
 
     // create timer
-    timer_ = create_wall_timer(500ms, std::bind(&ICP::timer_callback, this));
+    timer_ = create_wall_timer(1000ms, std::bind(&ICP::timer_callback, this));
 
     // initialize variables
-    data_occupancy_grid_ = std::make_shared<nav_msgs::msg::OccupancyGrid>();
-    reference_occupancy_grid_ =
-      std::make_shared<nav_msgs::msg::OccupancyGrid>();
+    live_occupancy_grid_ = std::make_shared<nav_msgs::msg::OccupancyGrid>();
   }
 
 private:
-  pcl::PointCloud<pcl::PointXYZ>::Ptr
+  pcl::PointCloud<pcl::PointXYZ>
   filter_point_cloud(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud)
   {
     // statistical outlier removal
@@ -81,8 +102,7 @@ private:
     radius_outlier.setMinNeighborsInRadius(
       5); // Increase for more aggressive outlier removal
     radius_outlier.filter(*radius_cloud);
-
-    return radius_cloud;
+    return *radius_cloud;
   }
 
   typedef PointMatcher<float> PM;
@@ -162,50 +182,34 @@ private:
 
     return parsedRotation;
   }
-  void reference_point_cloud_callback(
-    const sensor_msgs::msg::PointCloud2::SharedPtr msg)
+
+  void live_occupancy_grid_callback(
+    const nav_msgs::msg::OccupancyGrid::SharedPtr msg)
   {
-    pcl::fromROSMsg(*msg, reference_pcl_cloud_);
-    reference_pcl_cloud_ =
-      *filter_point_cloud(reference_pcl_cloud_.makeShared());
-    reference_occupancy_grid_ = point_cloud_to_occupancy_grid(
-      std::make_shared<pcl::PointCloud<pcl::PointXYZ>>(reference_pcl_cloud_));
+    live_occupancy_grid_ = msg;
+    live_occupancy_grid_->header.frame_id = "transformed_map";
   }
-  void
-  data_point_cloud_callback(const sensor_msgs::msg::PointCloud2::SharedPtr msg)
+
+  bool
+  match_point_cloud(geometry_msgs::msg::TransformStamped::SharedPtr transform)
   {
-    pcl::fromROSMsg(*msg, data_pcl_cloud_);
-    data_pcl_cloud_ = *filter_point_cloud(data_pcl_cloud_.makeShared());
-    data_occupancy_grid_ = point_cloud_to_occupancy_grid(
-      std::make_shared<pcl::PointCloud<pcl::PointXYZ>>(data_pcl_cloud_));
-  }
-  void match_point_cloud()
-  {
-    pcl::PointCloud<pcl::PointXY>::Ptr data_og_cloud_ptr;
-    pcl::PointCloud<pcl::PointXY>::Ptr reference_og_cloud_ptr;
-    data_og_cloud_ptr = occupancy_grid_to_2d_point_cloud(data_occupancy_grid_);
-    reference_og_cloud_ptr =
+    pcl::PointCloud<pcl::PointXY>::Ptr live_og_cloud_ptr =
+      occupancy_grid_to_2d_point_cloud(live_occupancy_grid_);
+    pcl::PointCloud<pcl::PointXY>::Ptr reference_og_cloud_ptr =
       occupancy_grid_to_2d_point_cloud(reference_occupancy_grid_);
-    if (data_pcl_cloud_.points.size() == 0 ||
-        reference_pcl_cloud_.points.size() == 0) {
-      return;
+    if (live_og_cloud_ptr->points.size() == 0 ||
+        reference_og_cloud_ptr->points.size() == 0) {
+      RCLCPP_ERROR(get_logger(), "No point cloud data available");
+      return false;
     }
-    // if (data_og_cloud_ptr->points.size() <
-    //     0.5 * reference_pcl_cloud_.points.size()) {
-    //   return;
-    // }
-    sensor_msgs::msg::PointCloud2 data_pcl_cloud_msg;
+
+    sensor_msgs::msg::PointCloud2 live_pcl_cloud_msg;
     sensor_msgs::msg::PointCloud2 reference_pcl_cloud_msg;
-    pcl::toROSMsg(*data_og_cloud_ptr, data_pcl_cloud_msg);
+    pcl::toROSMsg(*live_og_cloud_ptr, live_pcl_cloud_msg);
     pcl::toROSMsg(*reference_og_cloud_ptr, reference_pcl_cloud_msg);
 
-    data_pcl_cloud_msg.header.frame_id = "point_cloud";
-    data_pcl_cloud_msg.header.stamp = get_clock()->now();
-    reference_pcl_cloud_msg.header.frame_id = "point_cloud";
-    reference_pcl_cloud_msg.header.stamp = get_clock()->now();
-
-    data_dp = PointMatcher_ROS::rosMsgToPointMatcherCloud<float>(
-      data_pcl_cloud_msg, true);
+    live_dp = PointMatcher_ROS::rosMsgToPointMatcherCloud<float>(
+      live_pcl_cloud_msg, true);
 
     reference_dp = PointMatcher_ROS::rosMsgToPointMatcherCloud<float>(
       reference_pcl_cloud_msg, true);
@@ -216,7 +220,7 @@ private:
     if (!ifs.good()) {
       RCLCPP_ERROR(get_logger(), "Cannot open config file %s",
                    config_file.c_str());
-      return;
+      return false;
     }
     // icp.loadFromYaml(ifs);
     icp.setDefault();
@@ -233,53 +237,49 @@ private:
     rigidTrans = PM::get().REG(Transformation).create("RigidTransformation");
 
     if (!rigidTrans->checkParameters(initTransfo)) {
-      std::cerr << std::endl
-                << "Initial transformation is not rigid, identiy will be used"
-                << std::endl;
+      RCLCPP_ERROR(
+        get_logger(),
+        "\nInitial transformation is not rigid, identiy will be used\n");
       initTransfo = PM::TransformationParameters::Identity(cloud_dimension + 1,
                                                            cloud_dimension + 1);
     }
 
-    const DP initializedData = rigidTrans->compute(data_dp, initTransfo);
+    const DP initializedData = rigidTrans->compute(live_dp, initTransfo);
 
     // Compute the transformation to express data in ref
     PM::TransformationParameters T = icp(initializedData, reference_dp);
-    std::cout << "match ratio: "
-              << icp.errorMinimizer->getWeightedPointUsedRatio() << std::endl;
 
     // Transform data to express it in ref
-    DP data_out(initializedData);
-    icp.transformations.apply(data_out, T);
+    DP live_out(initializedData);
+    icp.transformations.apply(live_out, T);
 
     point_cloud_transform = T;
 
-    point_cloud_transform_.translation.x = point_cloud_transform(0, 2);
-    point_cloud_transform_.translation.y = point_cloud_transform(1, 2);
-    point_cloud_transform_.translation.z = 0.0;
+    transform->transform.translation.x = point_cloud_transform(0, 2);
+    transform->transform.translation.y = point_cloud_transform(1, 2);
+    transform->transform.translation.z = 0.0;
     tf2::Matrix3x3 tf_rot(point_cloud_transform(0, 0),
                           point_cloud_transform(0, 1), 0.0,
                           point_cloud_transform(1, 0),
                           point_cloud_transform(1, 1), 0.0, 0.0, 0.0, 1.0);
     tf2::Quaternion tf_quat;
     tf_rot.getRotation(tf_quat);
-    point_cloud_transform_.rotation.x = tf_quat.x();
-    point_cloud_transform_.rotation.y = tf_quat.y();
-    point_cloud_transform_.rotation.z = tf_quat.z();
-    point_cloud_transform_.rotation.w = tf_quat.w();
+    transform->transform.rotation.x = tf_quat.x();
+    transform->transform.rotation.y = tf_quat.y();
+    transform->transform.rotation.z = tf_quat.z();
+    transform->transform.rotation.w = tf_quat.w();
 
-    // PM::DataPoints transformed_data(data_dp);
-    // icp.transformations.apply(transformed_data, point_cloud_transform);
-
-    sensor_msgs::msg::PointCloud2 transformed_data_pcl_cloud_msg;
-    transformed_data_pcl_cloud_msg =
-      PointMatcher_ROS::pointMatcherCloudToRosMsg<float>(
-        data_out, "point_cloud", get_clock()->now());
-    pcl::fromROSMsg(transformed_data_pcl_cloud_msg, transformed_pcl_cloud_);
-    transformed_point_cloud_publisher_->publish(transformed_data_pcl_cloud_msg);
+    // sensor_msgs::msg::PointCloud2 transformed_pcl_cloud_msg;
+    // transformed_pcl_cloud_msg =
+    //   PointMatcher_ROS::pointMatcherCloudToRosMsg<float>(
+    //     live_out, "transformed_map", get_clock()->now());
+    // pcl::fromROSMsg(transformed_pcl_cloud_msg, transformed_pcl_cloud_);
+    return true;
   }
 
   nav_msgs::msg::OccupancyGrid::SharedPtr
-  point_cloud_to_occupancy_grid(const pcl::PointCloud<pcl::PointXYZ>::Ptr cloud)
+  point_cloud_to_occupancy_grid(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud,
+                                std::string frame)
   {
     // calculate the centroid
     Eigen::Matrix<float, 4, 1> centroid;
@@ -309,7 +309,7 @@ private:
     nav_msgs::msg::OccupancyGrid::SharedPtr occupancy_grid =
       std::make_shared<nav_msgs::msg::OccupancyGrid>();
     cloud->width = cloud->points.size();
-    occupancy_grid->header.frame_id = "transformed_map";
+    occupancy_grid->header.frame_id = frame;
     occupancy_grid->header.stamp = get_clock()->now();
     occupancy_grid->info.resolution = 0.1;
     occupancy_grid->info.width =
@@ -374,38 +374,48 @@ private:
   }
   void timer_callback()
   {
-    match_point_cloud();
+    nav_msgs::msg::OccupancyGrid::SharedPtr transformed_occupancy_grid(
+      new nav_msgs::msg::OccupancyGrid);
 
-    nav_msgs::msg::OccupancyGrid::SharedPtr occupancy_grid =
-      point_cloud_to_occupancy_grid(
-        std::make_shared<pcl::PointCloud<pcl::PointXYZ>>(data_pcl_cloud_));
+    geometry_msgs::msg::TransformStamped::SharedPtr transformed_point_cloud_tf =
+      std::make_shared<geometry_msgs::msg::TransformStamped>();
+    bool success = match_point_cloud(transformed_point_cloud_tf);
+    if (!success) {
+      return;
+    }
+    transformed_point_cloud_tf->header.stamp = get_clock()->now();
+    transformed_point_cloud_tf->header.frame_id = "map";
+    transformed_point_cloud_tf->child_frame_id = "transformed_map";
+    tf_broadcaster->sendTransform(*transformed_point_cloud_tf);
 
-    occupancy_grid_publisher_->publish(*occupancy_grid);
+    geometry_msgs::msg::TransformStamped reference_point_cloud_tf;
+    reference_point_cloud_tf.header.stamp = get_clock()->now();
+    reference_point_cloud_tf.header.frame_id = "map";
+    reference_point_cloud_tf.child_frame_id = "reference_map";
+    tf_broadcaster->sendTransform(reference_point_cloud_tf);
 
-    geometry_msgs::msg::TransformStamped transformed_point_cloud_tf;
-    transformed_point_cloud_tf.header.stamp = get_clock()->now();
-    transformed_point_cloud_tf.header.frame_id = "map";
-    transformed_point_cloud_tf.child_frame_id = "transformed_map";
-    transformed_point_cloud_tf.transform = point_cloud_transform_;
-    tf_broadcaster->sendTransform(transformed_point_cloud_tf);
+    transformed_occupancy_grid->header.stamp = get_clock()->now();
+    transformed_occupancy_grid->header.frame_id = "transformed_map";
+    transformed_occupancy_grid_publisher_->publish(*live_occupancy_grid_);
+
+    reference_occupancy_grid_->header.stamp = get_clock()->now();
+    reference_occupancy_grid_publisher_->publish(*reference_occupancy_grid_);
   }
   rclcpp::TimerBase::SharedPtr timer_;
   rclcpp::Publisher<nav_msgs::msg::OccupancyGrid>::SharedPtr
-    occupancy_grid_publisher_;
-  rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr
-    transformed_point_cloud_publisher_;
-  rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr
-    reference_point_cloud_subscriber_;
-  rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr
-    data_point_cloud_subscriber_;
+    transformed_occupancy_grid_publisher_;
+  rclcpp::Publisher<nav_msgs::msg::OccupancyGrid>::SharedPtr
+    reference_occupancy_grid_publisher_;
+  rclcpp::Subscription<nav_msgs::msg::OccupancyGrid>::SharedPtr
+    live_occupancy_grid_subscriber_;
 
   pcl::PointCloud<pcl::PointXYZ> reference_pcl_cloud_;
-  pcl::PointCloud<pcl::PointXYZ> data_pcl_cloud_;
+  pcl::PointCloud<pcl::PointXYZ> live_pcl_cloud_;
   pcl::PointCloud<pcl::PointXYZ> transformed_pcl_cloud_;
 
   geometry_msgs::msg::Transform point_cloud_transform_;
 
-  nav_msgs::msg::OccupancyGrid::SharedPtr data_occupancy_grid_;
+  nav_msgs::msg::OccupancyGrid::SharedPtr live_occupancy_grid_;
   nav_msgs::msg::OccupancyGrid::SharedPtr reference_occupancy_grid_;
 
   std::unique_ptr<tf2_ros::TransformBroadcaster> tf_broadcaster;
@@ -413,11 +423,13 @@ private:
   typedef PM::DataPoints DP;
   typedef PM::Parameters Parameters;
   PM::ICP icp;
-  DP data_dp;
+  DP live_dp;
   DP reference_dp;
   PM::TransformationParameters point_cloud_transform;
   std::string init_translation_;
   std::string init_rotation_;
+
+  std::string reference_map_file;
 };
 
 int main(int argc, char *argv[])
