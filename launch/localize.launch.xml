@@ -1,9 +1,0 @@
-<launch>
-    <arg name="reference_map_file" default="changeme.pcd"/>
-    <node pkg="tf2_ros" exec="static_transform_publisher" name="static_transform_map" args="--x 0 --y 0 --z 0 --yaw 0 --pitch 0 --roll 0 --frame-id world --child-frame-id map"/>
-    <node pkg="tf2_ros" exec="static_transform_publisher" name="static_transform_map" args="--x 0 --y 0 --z 0 --yaw 0 --pitch 0 --roll 0 --frame-id map --child-frame-id orb_point_cloud"/>
-    <node pkg="rviz2" exec="rviz2" args="-d $(find-pkg-share orb_slam3_ros2)/config/localize.rviz"/>
-    <node pkg="orb_slam3_ros2" exec="localize" output="screen">
-        <param name="reference_map_file" value="$(var reference_map_file)"/>
-    </node>
-</launch>

@@ -1,6 +1,7 @@
 #include <nav_msgs/msg/detail/occupancy_grid__struct.hpp>
 #include <pcl/cloud_iterator.h>
 #include <pcl/common/centroid.h>
+#include <pcl/conversions.h>
 #include <pcl/filters/filter.h>
 #include <pcl/filters/radius_outlier_removal.h>
 #include <pcl/io/pcd_io.h>
