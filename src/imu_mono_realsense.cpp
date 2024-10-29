@@ -1,4 +1,3 @@
-#include <nav_msgs/msg/detail/occupancy_grid__struct.hpp>
 #include <pcl/cloud_iterator.h>
 #include <pcl/common/centroid.h>
 #include <pcl/conversions.h>
@@ -20,7 +19,7 @@
 #include <rmw/qos_profiles.h>
 #include <sensor_msgs/msg/image.hpp>
 #include <sensor_msgs/msg/imu.hpp>
-#include <sensor_msgs/msg/point_cloud.hpp>
+#include <sensor_msgs/msg/point_cloud2.hpp>
 #include <std_srvs/srv/empty.hpp>
 #include <tf2/LinearMath/Matrix3x3.h>
 #include <tf2/LinearMath/Quaternion.h>
@@ -53,38 +52,10 @@ public:
     // declare parameters
     declare_parameter("sensor_type", "imu-monocular");
     declare_parameter("use_pangolin", true);
-    declare_parameter("reference_map_file", "changeme.pcd");
 
     // get parameters
     sensor_type_param = get_parameter("sensor_type").as_string();
-    bool use_pangolin = get_parameter("use_pangolin").as_bool();
-    reference_map_file_ = get_parameter("reference_map_file").as_string();
-    reference_map_file_ =
-      std::string(PROJECT_PATH) + "/maps/" + reference_map_file_;
-
-    pcl::io::loadPCDFile(reference_map_file_, reference_pcl_cloud_);
-    reference_pcl_cloud_.width = reference_pcl_cloud_.points.size();
-    RCLCPP_INFO_STREAM(get_logger(),
-                       "loaded " << reference_pcl_cloud_.points.size()
-                                 << " points from " << reference_map_file_);
-
-    reference_pcl_cloud_ =
-      *filter_point_cloud(reference_pcl_cloud_.makeShared());
-
-    Eigen::Matrix<float, 4, 1> centroid;
-    pcl::ConstCloudIterator<pcl::PointXYZ> cloud_iterator(reference_pcl_cloud_);
-    pcl::compute3DCentroid(cloud_iterator, centroid);
-
-    for (auto &point : reference_pcl_cloud_.points) {
-      point.x -= centroid[0];
-      point.y -= centroid[1];
-      point.z -= centroid[2];
-    }
-
-    reference_occupancy_grid_ =
-      std::make_shared<nav_msgs::msg::OccupancyGrid>();
-    reference_occupancy_grid_ = point_cloud_to_occupancy_grid(
-      std::make_shared<pcl::PointCloud<pcl::PointXYZ>>(reference_pcl_cloud_));
+    use_pangolin = get_parameter("use_pangolin").as_bool();
 
     // define callback groups
     image_callback_group_ =
@@ -94,10 +65,6 @@ public:
     slam_service_callback_group_ =
       create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
     timer_callback_group_ =
-      create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
-    match_timer_callback_group_ =
-      create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
-    octomap_server_client_callback_group_ =
       create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
 
     rclcpp::SubscriptionOptions image_options;
@@ -135,15 +102,9 @@ public:
                                                       10);
     pose_array_publisher_ =
       create_publisher<geometry_msgs::msg::PoseArray>("pose_array", 100);
-    reference_occupancy_grid_publisher_ =
-      create_publisher<nav_msgs::msg::OccupancyGrid>("reference_occupancy_grid",
+    live_occupancy_grid_publisher_ =
+      create_publisher<nav_msgs::msg::OccupancyGrid>("live_occupancy_grid",
                                                      10);
-    data_occupancy_grid_publisher_ =
-      create_publisher<nav_msgs::msg::OccupancyGrid>("data_occupancy_grid", 10);
-    transformed_point_cloud_publisher_ =
-      create_publisher<sensor_msgs::msg::PointCloud2>("transformed_point_cloud",
-                                                      10);
-
     // create subscriptions
     rclcpp::QoS image_qos(rclcpp::KeepLast(10));
     image_qos.reliability(RMW_QOS_POLICY_RELIABILITY_RELIABLE);
@@ -159,17 +120,6 @@ public:
       "camera/camera/imu", imu_qos,
       std::bind(&ImuMonoRealSense::imu_callback, this, _1), imu_options);
 
-    // create services
-    slam_service = create_service<std_srvs::srv::Empty>(
-      "slam_service",
-      std::bind(&ImuMonoRealSense::slam_service_callback, this, _1, _2),
-      rmw_qos_profile_services_default, slam_service_callback_group_);
-
-    // create clients
-    octomap_server_client_ = create_client<std_srvs::srv::Empty>(
-      "octomap_server/reset", rmw_qos_profile_services_default,
-      octomap_server_client_callback_group_);
-
     // tf broadcaster
     tf_broadcaster = std::make_unique<tf2_ros::TransformBroadcaster>(*this);
 
@@ -178,14 +128,10 @@ public:
       1000ms, std::bind(&ImuMonoRealSense::timer_callback, this),
       timer_callback_group_);
 
-    match_timer_ = create_wall_timer(
-      1000ms, std::bind(&ImuMonoRealSense::match_timer_callback, this),
-      match_timer_callback_group_);
-
     rclcpp::on_shutdown([this]() {
       pcl::io::savePCDFileBinary(std::string(PROJECT_PATH) + "/maps/" +
                                    generate_timestamp_string() + ".pcd",
-                                 accumulated_pcl_cloud_);
+                                 live_pcl_cloud_);
     });
     initialize_variables();
   }
@@ -248,7 +194,7 @@ private:
     nav_msgs::msg::OccupancyGrid::SharedPtr occupancy_grid =
       std::make_shared<nav_msgs::msg::OccupancyGrid>();
     cloud->width = cloud->points.size();
-    occupancy_grid->header.frame_id = "orb_map";
+    occupancy_grid->header.frame_id = "live_map";
     occupancy_grid->header.stamp = get_clock()->now();
     occupancy_grid->info.resolution = 0.1;
     occupancy_grid->info.width =
@@ -276,10 +222,12 @@ private:
   void initialize_variables()
   {
     pose_array_ = geometry_msgs::msg::PoseArray();
-    pose_array_.header.frame_id = "transformed_map";
+    pose_array_.header.frame_id = "live_map";
 
-    accumulated_pcl_cloud_msg_ = sensor_msgs::msg::PointCloud2();
-    accumulated_pcl_cloud_msg_.header.frame_id = "point_cloud";
+    live_pcl_cloud_msg_ = sensor_msgs::msg::PointCloud2();
+    live_pcl_cloud_msg_.header.frame_id = "point_cloud";
+
+    live_occupancy_grid_ = std::make_shared<nav_msgs::msg::OccupancyGrid>();
   }
 
   std::string generate_timestamp_string()
@@ -310,12 +258,6 @@ private:
       std::cerr << "Error image type" << std::endl;
       return cv_ptr->image.clone();
     }
-  }
-
-  void slam_service_callback(const std_srvs::srv::Empty::Request::SharedPtr,
-                             const std_srvs::srv::Empty::Response::SharedPtr)
-  {
-    orb_slam3_system_->SavePCDBinary(std::string(PROJECT_PATH) + "/maps/");
   }
 
   void image_callback(const sensor_msgs::msg::Image::SharedPtr msg)
@@ -369,7 +311,7 @@ private:
             auto Tcw =
               orb_slam3_system_->TrackMonocular(imageFrame, tImage, vImuMeas);
             Tcw_.translation() = Tcw.translation();
-            Tcw_.rotationMatrix() = Tcw.rotationMatrix();
+            Tcw_.setQuaternion(Tcw.unit_quaternion());
           }
         }
 
@@ -438,7 +380,7 @@ private:
 
       geometry_msgs::msg::TransformStamped base_link_tf;
       base_link_tf.header.stamp = time_now;
-      base_link_tf.header.frame_id = "point_cloud";
+      base_link_tf.header.frame_id = "live_map";
       base_link_tf.child_frame_id = "base_link";
       base_link_tf.transform.translation.x = Twc.translation().x();
       base_link_tf.transform.translation.y = Twc.translation().y();
@@ -454,59 +396,46 @@ private:
       point_cloud_tf.child_frame_id = "point_cloud";
       tf_broadcaster->sendTransform(point_cloud_tf);
 
-      accumulated_pcl_cloud_ = orb_slam3_system_->GetMapPCL();
+      geometry_msgs::msg::TransformStamped live_map_tf;
+      live_map_tf.header.stamp = time_now;
+      live_map_tf.header.frame_id = "map";
+      live_map_tf.child_frame_id = "live_map";
+      tf_broadcaster->sendTransform(live_map_tf);
 
-      pcl::PointCloud<pcl::PointXYZ>::Ptr accumulated_ptr =
-        std::make_shared<pcl::PointCloud<pcl::PointXYZ>>(
-          accumulated_pcl_cloud_);
+      live_pcl_cloud_ = orb_slam3_system_->GetMapPCL();
 
-      filter_point_cloud(accumulated_ptr);
+      pcl::PointCloud<pcl::PointXYZ>::Ptr live_ptr =
+        std::make_shared<pcl::PointCloud<pcl::PointXYZ>>(live_pcl_cloud_);
 
-      accumulated_ptr->width = accumulated_ptr->points.size();
-      pcl::toROSMsg(*accumulated_ptr, accumulated_pcl_cloud_msg_);
+      pcl::PointCloud<pcl::PointXYZ>::Ptr filtered_cloud_ptr(
+        new pcl::PointCloud<pcl::PointXYZ>);
+      filtered_cloud_ptr = filter_point_cloud(live_ptr);
 
-      geometry_msgs::msg::TransformStamped orb_map_tf;
-      orb_map_tf.header.stamp = time_now;
-      orb_map_tf.header.frame_id = "world";
-      orb_map_tf.child_frame_id = "orb_map";
-      tf_broadcaster->sendTransform(orb_map_tf);
+      filtered_cloud_ptr->width = filtered_cloud_ptr->points.size();
+      pcl::toROSMsg(*filtered_cloud_ptr, live_pcl_cloud_msg_);
 
-      reference_occupancy_grid_->header.stamp = time_now;
-      reference_occupancy_grid_->header.frame_id = "orb_map";
-      reference_occupancy_grid_publisher_->publish(*reference_occupancy_grid_);
+      live_occupancy_grid_ = point_cloud_to_occupancy_grid(filtered_cloud_ptr);
+      live_occupancy_grid_->header.stamp = time_now;
+      live_occupancy_grid_->header.frame_id = "live_map";
+      live_occupancy_grid_publisher_->publish(*live_occupancy_grid_);
 
-      accumulated_pcl_cloud_msg_.header.stamp = time_now;
-      accumulated_pcl_cloud_msg_.header.frame_id = "point_cloud";
-      data_point_cloud_publisher_->publish(accumulated_pcl_cloud_msg_);
-
-      sensor_msgs::msg::PointCloud2 reference_pcl_cloud_msg;
-      pcl::toROSMsg(reference_pcl_cloud_, reference_pcl_cloud_msg);
-      reference_pcl_cloud_msg.header.stamp = time_now;
-      reference_pcl_cloud_msg.header.frame_id = "point_cloud";
-      reference_point_cloud_publisher_->publish(reference_pcl_cloud_msg);
+      live_pcl_cloud_msg_.header.stamp = time_now;
+      live_pcl_cloud_msg_.header.frame_id = "live_map";
+      data_point_cloud_publisher_->publish(live_pcl_cloud_msg_);
     } else {
-      octomap_server_client_->async_send_request(
-        std::make_shared<std_srvs::srv::Empty::Request>());
       initialize_variables();
     }
     if (!inertial_ba1_ && orb_slam3_system_->GetInertialBA1()) {
       inertial_ba1_ = true;
-      pose_array_.poses.clear();
-      pose_array_.header.stamp = get_clock()->now();
+      initialize_variables();
       RCLCPP_INFO(get_logger(), "Inertial BA1 complete");
     }
 
     if (!inertial_ba2_ && orb_slam3_system_->GetInertialBA2()) {
       inertial_ba2_ = true;
-      pose_array_.poses.clear();
-      pose_array_.header.stamp = get_clock()->now();
+      initialize_variables();
       RCLCPP_INFO(get_logger(), "Inertial BA2 complete");
     }
-  }
-
-  void match_timer_callback()
-  {
-    // match_point_cloud();
   }
 
   rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr image_sub;
@@ -518,30 +447,22 @@ private:
   rclcpp::Publisher<geometry_msgs::msg::PoseArray>::SharedPtr
     pose_array_publisher_;
   rclcpp::Publisher<nav_msgs::msg::OccupancyGrid>::SharedPtr
-    reference_occupancy_grid_publisher_;
-  rclcpp::Publisher<nav_msgs::msg::OccupancyGrid>::SharedPtr
-    data_occupancy_grid_publisher_;
-  rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr
-    transformed_point_cloud_publisher_;
-  rclcpp::Service<std_srvs::srv::Empty>::SharedPtr slam_service;
-  rclcpp::Client<std_srvs::srv::Empty>::SharedPtr octomap_server_client_;
+    live_occupancy_grid_publisher_;
   rclcpp::TimerBase::SharedPtr timer;
-  rclcpp::TimerBase::SharedPtr match_timer_;
 
   rclcpp::CallbackGroup::SharedPtr image_callback_group_;
   rclcpp::CallbackGroup::SharedPtr imu_callback_group_;
   rclcpp::CallbackGroup::SharedPtr slam_service_callback_group_;
   rclcpp::CallbackGroup::SharedPtr timer_callback_group_;
-  rclcpp::CallbackGroup::SharedPtr match_timer_callback_group_;
-  rclcpp::CallbackGroup::SharedPtr octomap_server_client_callback_group_;
 
   std::unique_ptr<tf2_ros::TransformBroadcaster> tf_broadcaster;
 
   sensor_msgs::msg::Imu imu_msg;
-
-  nav_msgs::msg::Odometry odom_msg_;
+  geometry_msgs::msg::PoseArray pose_array_;
 
   std::string sensor_type_param;
+  std::string reference_map_file_;
+  bool use_pangolin;
 
   std::vector<geometry_msgs::msg::Vector3> vGyro;
   std::vector<double> vGyro_times;
@@ -551,29 +472,19 @@ private:
   queue<sensor_msgs::msg::Imu::SharedPtr> imu_buf_;
   queue<sensor_msgs::msg::Image::SharedPtr> img_buf_;
   std::mutex buf_mutex_imu_, buf_mutex_img_, orbslam3_mutex_,
-    accumulated_pcl_cloud_mutex_;
+    live_pcl_cloud_mutex_;
 
   std::shared_ptr<ORB_SLAM3::System> orb_slam3_system_;
   std::string vocabulary_file_path;
   std::string settings_file_path;
 
-  sensor_msgs::msg::PointCloud2 accumulated_pcl_cloud_msg_;
-  pcl::PointCloud<pcl::PointXYZ> accumulated_pcl_cloud_;
-  pcl::PointCloud<pcl::PointXYZ> reference_pcl_cloud_;
-  nav_msgs::msg::OccupancyGrid::SharedPtr reference_occupancy_grid_;
-
-  geometry_msgs::msg::PoseArray pose_array_;
+  sensor_msgs::msg::PointCloud2 live_pcl_cloud_msg_;
+  pcl::PointCloud<pcl::PointXYZ> live_pcl_cloud_;
+  nav_msgs::msg::OccupancyGrid::SharedPtr live_occupancy_grid_;
 
   bool inertial_ba1_;
   bool inertial_ba2_;
-
   Sophus::SE3f Tcw_;
-
-  std::string reference_map_file_;
-
-  typedef PointMatcher<float> PM;
-  typedef PM::Parameters Parameters;
-  typedef PM::TransformationParameters TP;
 };
 
 int main(int argc, char *argv[])

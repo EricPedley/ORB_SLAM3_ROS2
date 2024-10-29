@@ -40,21 +40,9 @@ def generate_launch_description():
                 realsense2_camera node will not launch. Otherwise, nothing\
                 will happen.",
             ),
-            # Node(
-            #     package="orb_slam3_ros2",
-            #     executable="imu_mono_node_cpp",
-            #     output="screen",
-            #     # prefix="xterm -e gdb --args",
-            #     parameters=[
-            #         {
-            #             "sensor_type": LaunchConfiguration("sensor_type"),
-            #             "use_pangolin": LaunchConfiguration("use_pangolin"),
-            #         }
-            #     ],
-            # ),
             Node(
                 package="orb_slam3_ros2",
-                executable="localize_node",
+                executable="icp_orb_slam3_node",
                 output="screen",
                 # prefix="xterm -e gdb --args",
                 parameters=[

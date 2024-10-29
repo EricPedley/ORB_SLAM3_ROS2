@@ -51,64 +51,54 @@ source install/setup.bash
 
 There are multiple ways to use this project.
 
-#### Basic Usage
+#### ORB_SLAM3
 
-The command we use to run SLAM using a D435i RealSense camera is:
+The command to run VIO SLAM using a D435i RealSense camera is:
 ```sh
 ros2 launch orb_slam3_ros2 mapping.launch.xml
 ```
 This will launch the ORB_SLAM3 system in imu-monocular mode by default. You should
-be able to see Pangolin launch and start displaying the point cloud, and you should
-also see an opencv window pop up that displays the keypoints being captured by
-ORB_SLAM3. You can walk around with your RealSense and begin to build a map of
-your environment. If you want to save your map, you have a few options. This
-first is to make the following ROS 2 service call:
+see rviz pop up, and then shortly a Pangolin and an opencv window. You should
+also see the 3D point cloud from ORB_SLAM3 and an occupancy grid being built
+in RVIZ. The map you create will automatically be saved as a filtered
+point cloud for the point cloud library (PCL). These files are stored in the
+```maps``` directory.
+
+You can record and play back rosbags with arguments to the launch file:
 ```sh
-ros2 service call /slam_service std_srvs/srv/Empty {}\
-```
-This will save a map in the ```ORB_SLAM3_ROS2/maps``` directory in a file named
-with the current date and time. This file is a .pcd file, which is from the [Point Cloud Library](https://pointclouds.org/).
-
-We can use this file to retroactively view the map we just created in RVIZ.
-To do this, we can run the following command:
-```sh
-ros2 launch orb_slam3_ros2 visualize_point_cloud.launch.xml pcl_file:=<name_of_pcl_file>
-```
-Make sure you use only the name of the file, not the full file path.
-
-#### Other Features
-
-There are a couple other features that can be used through arguments to the
-```mapping.launch.py``` file. Here is a list:
-```sh
-'sensor_type':
-    The mode which ORB_SLAM3 will run in.
-    (default: 'imu-monocular')
-
-'use_pangolin':
-    Whether to use Pangolin for visualization.
-    (default: 'true')
-
-'playback_bag':
-    The rosbag to play during execution. If set, the realsense2_camera node will not launch. Otherwise, nothing will happen.
-    (default: 'changeme')
-
 'record_bag':
     Whether or not to record a rosbag.
     (default: 'false')
 
 'bag_name':
-    The name of the bag if record_bag is true. By default, the name of the bag will be ORB_SLAM3_YYYY-MM-DD_HH-mm-ss
-    (default: 'ORB_SLAM3_2024-10-15_00-42-34')
-```
-My general workflow is to record a bag, and then play it back over and over again
-while I tweak things.
+    The name of the bag if record_bag is true. By default, the name of the bag
+    will be ORB_SLAM3_YYYY-MM-DD_HH-mm-ss
+    (default: 'ORB_SLAM3_YYYY-MM-DD_HH-mm-ss')
 
-Another feature is the ability to build 2D occupancy grids from the 3D point clouds
-created by ORB_SLAM3. By default, the point cloud is fed into an octomap_server
-node, which creates an octomap from the data in addition to a 2D occupancy grid.
-My plan is to soon integrate slam_toolbox with this project so that these 2D occupancy
-grids can be used to localize with.
+'playback_bag':
+    The rosbag to play during execution. If set, the realsense2_camera node
+    will not launch. Otherwise, nothing will happen.
+    (default: 'changeme')
+```
+Bags are recorded to the ```bags``` directory. The playbag_back argument shouldn't
+be a full path to the bag, just the name of it.
+
+#### Localizing
+The localization launch file is capable of finding the tf from one occupancy
+grid to another. This is useful for localizing maps created by slam_toolbox or
+rtabmap in maps create by ORB_SLAM3. To find the tf between the occupancy grids
+I use ICP matching through libpointmatcher. The launch file is:
+```sh
+ros2 launch orb_slam3_ros2 localize.launch.xml
+```
+You must provide the following argument in order to run localization:
+```sh
+'reference_map_file':
+    The reference map file to localize against
+    (default: 'changeme.pcd')
+```
+This should just be the map file's name, not the full path. Maybe obviously,
+you can use maps created by running mapping.launch.py as the reference map file.
 
 ### Troubleshooting
 1. ORB_SLAM3 keeps resetting the map on its own.
