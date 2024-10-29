@@ -363,6 +363,7 @@ private:
       // q_rot_x.setRPY(M_PI / 2.0, 0, 0);
       q_rot_z.setRPY(0, 0, M_PI / 2.0);
 
+      // change camera coordinate to map coordinates
       tf2::Quaternion q_combined = q_rot_z * q_yaw;
       q_combined.normalize();
 
