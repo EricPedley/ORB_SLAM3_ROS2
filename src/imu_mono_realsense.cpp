@@ -1,11 +1,12 @@
+#include <geometry_msgs/msg/detail/transform_stamped__struct.hpp>
 #include <pcl/cloud_iterator.h>
 #include <pcl/common/centroid.h>
 #include <pcl/filters/filter.h>
 #include <pcl/filters/radius_outlier_removal.h>
-#include <pcl/io/pcd_io.h>
-#include <pcl/io/ply_io.h>
 #include <pcl/filters/statistical_outlier_removal.h>
 #include <pcl/filters/voxel_grid.h>
+#include <pcl/io/pcd_io.h>
+#include <pcl/io/ply_io.h>
 #include <pcl_conversions/pcl_conversions.h>
 
 #include <geometry_msgs/msg/pose_array.hpp>
@@ -24,6 +25,7 @@
 #include <tf2/LinearMath/Quaternion.h>
 #include <tf2_ros/transform_broadcaster.h>
 
+#include <chrono>
 #include <sstream>
 
 #include <cv_bridge/cv_bridge.h>
@@ -96,10 +98,13 @@ public:
     // create publishers
     live_point_cloud_publisher_ =
       create_publisher<sensor_msgs::msg::PointCloud2>("live_point_cloud", 10);
+    pose_array_publisher_ =
+      create_publisher<geometry_msgs::msg::PoseArray>("pose_array", 10);
     live_occupancy_grid_publisher_ =
       create_publisher<nav_msgs::msg::OccupancyGrid>("live_occupancy_grid", 10);
-    pose_array_publisher_ =
-      create_publisher<geometry_msgs::msg::PoseArray>("pose_array", 100);
+    odom_publisher_ = create_publisher<nav_msgs::msg::Odometry>("orb_odom", 10);
+    orb_image_publisher_ =
+      create_publisher<sensor_msgs::msg::Image>("/orb_camera/image", 10);
     // create subscriptions
     rclcpp::QoS image_qos(rclcpp::KeepLast(10));
     image_qos.reliability(RMW_QOS_POLICY_RELIABILITY_RELIABLE);
@@ -257,8 +262,14 @@ private:
 
   void image_callback(const sensor_msgs::msg::Image::SharedPtr msg)
   {
-    img_buf_.push(msg);
     rclcpp::Time time_now = get_clock()->now();
+
+    sensor_msgs::msg::Image::SharedPtr msg_out =
+      std::make_shared<sensor_msgs::msg::Image>(*msg);
+    msg_out->header.stamp = time_now;
+    orb_image_publisher_->publish(*msg_out);
+
+    img_buf_.push(msg);
 
     // begin to empty the img_buf_ queue, which is full of other queues
     while (!img_buf_.empty()) {
@@ -362,29 +373,55 @@ private:
       tf2::Quaternion q_combined = q_rot_z * q_yaw;
       q_combined.normalize();
 
-      geometry_msgs::msg::Pose pose;
-      pose.position.x = Twc.translation().x();
-      pose.position.y = Twc.translation().y();
-      // pose.position.z = Twc.translation().z();
-      pose.orientation.x = q_combined.x();
-      pose.orientation.y = q_combined.y();
-      pose.orientation.z = q_combined.z();
-      pose.orientation.w = q_combined.w();
-      pose_array_.header.stamp = time_now;
-      pose_array_.poses.push_back(pose);
-      pose_array_publisher_->publish(pose_array_);
+      geometry_msgs::msg::TransformStamped odom_tf;
+      odom_tf.header.stamp = time_now;
+      odom_tf.header.frame_id = "odom";
+      odom_tf.child_frame_id = "base_link";
+      odom_tf.transform.translation.x = Twc.translation().x();
+      odom_tf.transform.translation.y = Twc.translation().y();
+      odom_tf.transform.translation.z = Twc.translation().z();
+      odom_tf.transform.rotation.x = q_combined.x();
+      odom_tf.transform.rotation.y = q_combined.y();
+      odom_tf.transform.rotation.z = q_combined.z();
+      odom_tf.transform.rotation.w = q_combined.w();
+      tf_broadcaster->sendTransform(odom_tf);
 
-      geometry_msgs::msg::TransformStamped base_link_tf;
-      base_link_tf.header.stamp = time_now;
-      base_link_tf.header.frame_id = "live_map";
-      base_link_tf.child_frame_id = "base_link";
-      base_link_tf.transform.translation.x = Twc.translation().x();
-      base_link_tf.transform.translation.y = Twc.translation().y();
-      base_link_tf.transform.rotation.x = q_combined.x();
-      base_link_tf.transform.rotation.y = q_combined.y();
-      base_link_tf.transform.rotation.z = q_combined.z();
-      base_link_tf.transform.rotation.w = q_combined.w();
-      tf_broadcaster->sendTransform(base_link_tf);
+      nav_msgs::msg::Odometry odom;
+      odom.header.stamp = time_now;
+      odom.header.frame_id = "odom";
+      odom.child_frame_id = "base_link";
+      odom.pose.pose.position.x = Twc.translation().x();
+      odom.pose.pose.position.y = Twc.translation().y();
+      odom.pose.pose.position.z = Twc.translation().z();
+      odom.pose.pose.orientation.x = q_combined.x();
+      odom.pose.pose.orientation.y = q_combined.y();
+      odom.pose.pose.orientation.z = q_combined.z();
+      odom.pose.pose.orientation.w = q_combined.w();
+      odom_publisher_->publish(odom);
+
+      // geometry_msgs::msg::Pose pose;
+      // pose.position.x = Twc.translation().x();
+      // pose.position.y = Twc.translation().y();
+      // // pose.position.z = Twc.translation().z();
+      // pose.orientation.x = q_combined.x();
+      // pose.orientation.y = q_combined.y();
+      // pose.orientation.z = q_combined.z();
+      // pose.orientation.w = q_combined.w();
+      // pose_array_.header.stamp = time_now;
+      // pose_array_.poses.push_back(pose);
+      // pose_array_publisher_->publish(pose_array_);
+
+      // geometry_msgs::msg::TransformStamped base_link_tf;
+      // base_link_tf.header.stamp = time_now;
+      // base_link_tf.header.frame_id = "live_map";
+      // base_link_tf.child_frame_id = "base_link";
+      // base_link_tf.transform.translation.x = Twc.translation().x();
+      // base_link_tf.transform.translation.y = Twc.translation().y();
+      // base_link_tf.transform.rotation.x = q_combined.x();
+      // base_link_tf.transform.rotation.y = q_combined.y();
+      // base_link_tf.transform.rotation.z = q_combined.z();
+      // base_link_tf.transform.rotation.w = q_combined.w();
+      // tf_broadcaster->sendTransform(base_link_tf);
 
       geometry_msgs::msg::TransformStamped point_cloud_tf;
       point_cloud_tf.header.stamp = time_now;
@@ -392,11 +429,11 @@ private:
       point_cloud_tf.child_frame_id = "point_cloud";
       tf_broadcaster->sendTransform(point_cloud_tf);
 
-      geometry_msgs::msg::TransformStamped live_map_tf;
-      live_map_tf.header.stamp = time_now;
-      live_map_tf.header.frame_id = "map";
-      live_map_tf.child_frame_id = "live_map";
-      tf_broadcaster->sendTransform(live_map_tf);
+      // geometry_msgs::msg::TransformStamped live_map_tf;
+      // live_map_tf.header.stamp = time_now;
+      // live_map_tf.header.frame_id = "map";
+      // live_map_tf.child_frame_id = "live_map";
+      // tf_broadcaster->sendTransform(live_map_tf);
 
       live_pcl_cloud_ = orb_slam3_system_->GetMapPCL();
 
@@ -442,6 +479,8 @@ private:
     pose_array_publisher_;
   rclcpp::Publisher<nav_msgs::msg::OccupancyGrid>::SharedPtr
     live_occupancy_grid_publisher_;
+  rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr orb_image_publisher_;
+  rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr odom_publisher_;
   rclcpp::TimerBase::SharedPtr timer;
 
   rclcpp::CallbackGroup::SharedPtr image_callback_group_;

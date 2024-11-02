@@ -55,6 +55,7 @@ find_package(ORB_SLAM3 REQUIRED)
 find_package(libpointmatcher REQUIRED)
 find_package(libpointmatcher_ros REQUIRED)
 find_package(rtabmap_ros REQUIRED)
+find_package(yaml-cpp REQUIRED)
 
 message("libpointmatcher_INCLUDE_DIRS: ${libpointmatcher_INCLUDE_DIRS}")
 message("libpointmatcher_LIBRARIES: ${libpointmatcher_LIBRARIES}")
@@ -104,11 +105,19 @@ add_executable(icp_localization_node
   src/icp_localization.cpp
 )
 
+add_executable(orb_camera_info_node
+  src/orb_camera_info.cpp
+)
+
 ament_target_dependencies(imu_mono_node_cpp
   PUBLIC ${THIS_PACKAGE_INCLUDE_DEPENDS}
 )
 
 ament_target_dependencies(icp_localization_node
+  PUBLIC ${THIS_PACKAGE_INCLUDE_DEPENDS}
+)
+
+ament_target_dependencies(orb_camera_info_node
   PUBLIC ${THIS_PACKAGE_INCLUDE_DEPENDS}
 )
 
@@ -134,8 +143,9 @@ target_include_directories(imu_mono_node_cpp PUBLIC
 
 target_link_libraries(imu_mono_node_cpp PUBLIC ${ORB_SLAM3_LIBRARY} ${PCL_LIBRARIES} ${libpointmatcher_LIBRARIES} ${libpointmatcher_ros_LIBRARIES})
 target_link_libraries(icp_localization_node PUBLIC ${PCL_LIBRARIES} ${libpointmatcher_LIBRARIES} ${libpointmatcher_ros_LIBRARIES})
+target_link_libraries(orb_camera_info_node PUBLIC yaml-cpp)
 
-install(TARGETS icp_localization_node imu_mono_node_cpp
+install(TARGETS icp_localization_node imu_mono_node_cpp orb_camera_info_node
     DESTINATION lib/${PROJECT_NAME}
 )
 

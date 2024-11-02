@@ -25,7 +25,7 @@ Panels:
     Experimental: false
     Name: Time
     SyncMode: 0
-    SyncSource: PointCloud2
+    SyncSource: ""
 Visualization Manager:
   Class: ""
   Displays:
@@ -91,15 +91,11 @@ Visualization Manager:
           Value: true
         camera_link:
           Value: true
-        live_map:
-          Value: true
         map:
           Value: true
         odom:
           Value: true
         point_cloud:
-          Value: true
-        transformed_map:
           Value: true
         world:
           Value: true
@@ -111,16 +107,9 @@ Visualization Manager:
       Tree:
         world:
           map:
-            live_map:
-              base_link:
-                camera_bottom_screw_frame:
-                  camera_link:
-                    {}
             odom:
               {}
             point_cloud:
-              {}
-            transformed_map:
               {}
       Update Interval: 0
       Value: true
@@ -135,39 +124,26 @@ Visualization Manager:
         History Policy: Keep Last
         Reliability Policy: Reliable
         Value: /robot_description
-      Enabled: true
+      Enabled: false
       Links:
         All Links Enabled: true
         Expand Joint Details: false
         Expand Link Details: false
         Expand Tree: false
         Link Tree Style: Links in Alphabetic Order
-        base_link:
-          Alpha: 1
-          Show Axes: false
-          Show Trail: false
-        camera_bottom_screw_frame:
-          Alpha: 1
-          Show Axes: false
-          Show Trail: false
-        camera_link:
-          Alpha: 1
-          Show Axes: false
-          Show Trail: false
-          Value: true
       Mass Properties:
         Inertia: false
         Mass: false
       Name: RobotModel
       TF Prefix: ""
       Update Interval: 0
-      Value: true
+      Value: false
       Visual Enabled: true
     - Alpha: 0.699999988079071
       Class: rviz_default_plugins/Map
       Color Scheme: map
       Draw Behind: false
-      Enabled: true
+      Enabled: false
       Name: Map
       Topic:
         Depth: 5
@@ -175,15 +151,15 @@ Visualization Manager:
         Filter size: 10
         History Policy: Keep Last
         Reliability Policy: Reliable
-        Value: /transformed_occupancy_grid
+        Value: /live_occupancy_grid
       Update Topic:
         Depth: 5
         Durability Policy: Volatile
         History Policy: Keep Last
         Reliability Policy: Reliable
-        Value: /transformed_occupancy_grid_updates
+        Value: /live_occupancy_grid_updates
       Use Timestamp: false
-      Value: true
+      Value: false
     - Alpha: 1
       Autocompute Intensity Bounds: true
       Autocompute Value Bounds:
@@ -264,7 +240,7 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz_default_plugins/Orbit
-      Distance: 90.19738006591797
+      Distance: 18.505067825317383
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
@@ -279,10 +255,10 @@ Visualization Manager:
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Pitch: 0.860398530960083
+      Pitch: 0.870398759841919
       Target Frame: <Fixed Frame>
       Value: Orbit (rviz)
-      Yaw: 0.7403982281684875
+      Yaw: 0.7853981852531433
     Saved: ~
 Window Geometry:
   Displays:
