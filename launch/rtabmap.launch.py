@@ -74,10 +74,11 @@ def generate_launch_description():
                         # "odom_frame_id": "odom",
                         "subscribe_rgb": True,
                         "subscribe_depth": False,
-                        "subscribe_scan": False,
-                        "approx_sync": False,
-                        "use_sim_time": LaunchConfiguration("use_sim_time"),
-                        "sync_queue_size": 10,
+                        # "subscribe_scan": False,
+                        # "approx_sync": True,
+                        # "use_sim_time": LaunchConfiguration("use_sim_time"),
+                        # "sync_queue_size": 10,
+                        # "log_level": "debug",
                         # "stereo": "false",
                         # "odom_tf_linear_variance": 0.0005,
                         # "odom_tf_angular_variance": 0.0005,
@@ -90,7 +91,7 @@ def generate_launch_description():
                     ("rgb/camera_info", "/orb_camera/info"),
                     ("odom", "/orb_odom"),
                 ],
-                arguments=["--delete_db_on_start", "--log_level", "DEBUG"],
+                arguments=["--delete_db_on_start"],
             ),
             Node(
                 package="rtabmap_viz",
@@ -99,7 +100,7 @@ def generate_launch_description():
                 parameters=[
                     {
                         "frame_id": "base_link",
-                        # "odom_frame_id": "odom",
+                        "odom_frame_id": "odom",
                         "subscribe_rgb": True,
                         "approx_sync": False,  # False,
                         "use_sim_time": LaunchConfiguration("use_sim_time"),
@@ -107,7 +108,7 @@ def generate_launch_description():
                 ],
                 remappings=[
                     ("rgb/image", "/orb_camera/image"),
-                    ("rgb/camera_info", "/orb_camera_info"),
+                    ("rgb/camera_info", "/orb_camera/info"),
                 ],
             ),
         ],

@@ -267,6 +267,7 @@ private:
     sensor_msgs::msg::Image::SharedPtr msg_out =
       std::make_shared<sensor_msgs::msg::Image>(*msg);
     msg_out->header.stamp = time_now;
+    msg_out->header.frame_id = "base_link";
     orb_image_publisher_->publish(*msg_out);
 
     img_buf_.push(msg);

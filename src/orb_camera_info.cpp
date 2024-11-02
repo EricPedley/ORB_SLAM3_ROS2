@@ -37,21 +37,14 @@ private:
     camera_info->width = camera_info_node_["Camera.width"].as<int>();
     camera_info->height = camera_info_node_["Camera.height"].as<int>();
     camera_info->distortion_model = "plumb_bob";
-    camera_info->k = {camera_info_node_["Camera1.fx"].as<double>(),
-                      0.0,
-                      camera_info_node_["Camera1.cx"].as<double>(),
-                      0.0,
-                      camera_info_node_["Camera1.fy"].as<double>(),
-                      camera_info_node_["Camera1.cy"].as<double>(),
-                      0.0,
-                      0.0,
-                      1.0};
-    camera_info->d = {
-      camera_info_node_["Camera1.k1"].as<double>(),
-      camera_info_node_["Camera1.k2"].as<double>(),
-      camera_info_node_["Camera1.p1"].as<double>(),
-      camera_info_node_["Camera1.p2"].as<double>(),
-    };
+    camera_info->k = {camera_info_node_["Camera1.fx"].as<double>(), 0.0, camera_info_node_["Camera1.cx"].as<double>(),
+                      0.0, camera_info_node_["Camera1.fy"].as<double>(), camera_info_node_["Camera1.cy"].as<double>(),
+                      0.0, 0.0, 1.0};
+    camera_info->r = {1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0};
+    camera_info->p = {camera_info_node_["Camera1.fx"].as<double>(), 0.0, camera_info_node_["Camera1.cx"].as<double>(), 0.0,
+                      0.0, camera_info_node_["Camera1.fy"].as<double>(), camera_info_node_["Camera1.cy"].as<double>(), 0.0,
+                      0.0, 0.0, 1.0, 0.0};
+
     camera_info_publisher_->publish(*camera_info);
   }
   rclcpp::TimerBase::SharedPtr timer_;
