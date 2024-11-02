@@ -199,6 +199,8 @@ private:
       occupancy_grid_to_2d_point_cloud(reference_occupancy_grid_);
     if (live_og_cloud_ptr->points.size() == 0 ||
         reference_og_cloud_ptr->points.size() == 0) {
+      RCLCPP_INFO_STREAM(get_logger(), "live_og_cloud_ptr->points" << live_og_cloud_ptr->points.size());
+      RCLCPP_INFO_STREAM(get_logger(), "reference_og_cloud_ptr->points" << reference_og_cloud_ptr->points.size());
       RCLCPP_ERROR(get_logger(), "No point cloud data available");
       return false;
     }
@@ -226,6 +228,8 @@ private:
     icp.setDefault();
 
     int cloud_dimension = reference_dp.getEuclideanDim();
+
+    RCLCPP_INFO_STREAM(get_logger(), "cloud_dimeinsion: " << cloud_dimension);
 
     PM::TransformationParameters translation =
       parseTranslation(init_translation_, cloud_dimension);
@@ -311,7 +315,7 @@ private:
     cloud->width = cloud->points.size();
     occupancy_grid->header.frame_id = frame;
     occupancy_grid->header.stamp = get_clock()->now();
-    occupancy_grid->info.resolution = 0.1;
+    occupancy_grid->info.resolution = 0.05;
     occupancy_grid->info.width =
       std::abs(max_x - min_x) / occupancy_grid->info.resolution + 1;
     occupancy_grid->info.height =

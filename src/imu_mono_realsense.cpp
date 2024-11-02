@@ -191,7 +191,7 @@ private:
     cloud->width = cloud->points.size();
     occupancy_grid->header.frame_id = "live_map";
     occupancy_grid->header.stamp = get_clock()->now();
-    occupancy_grid->info.resolution = 0.1;
+    occupancy_grid->info.resolution = 0.05;
     occupancy_grid->info.width =
       std::abs(max_x - min_x) / occupancy_grid->info.resolution + 1;
     occupancy_grid->info.height =

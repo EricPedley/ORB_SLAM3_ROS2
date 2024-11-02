@@ -53,6 +53,9 @@ def generate_launch_description():
                         ),
                     }
                 ],
+                # remappings=[
+                #     ("/map", "/live_occupancy_grid")
+                # ]
             ),
             IncludeLaunchDescription(
                 PythonLaunchDescriptionSource(

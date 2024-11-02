@@ -98,6 +98,25 @@ def generate_launch_description():
                 ),
             ),
             Node(
+                package="rtabmap_slam",
+                executable="rtabmap",
+                output="screen",
+                parameters=[
+                    {
+                        "frame_id": "bask_link",
+                        "subscribe_depth": True,
+                        "subscribe_odom_info": True,
+                        "approx_sync": False,
+                        "wait_imu_to_init": True,
+                    }
+                ],
+                remappings=[
+                    ("imu", "/camera/camera/imu"),
+                    ("rgb/image", "/camera/camera/color/image_raw"),
+                    ("rgb/camera_info", "/calibrated_camera_info"),
+                ],
+            ),
+            Node(
                 package="orb_slam3_ros2",
                 executable="imu_mono_node_cpp",
                 output="screen",

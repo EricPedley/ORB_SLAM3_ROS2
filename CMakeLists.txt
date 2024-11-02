@@ -54,6 +54,7 @@ find_package(PCL 1.12 REQUIRED)
 find_package(ORB_SLAM3 REQUIRED)
 find_package(libpointmatcher REQUIRED)
 find_package(libpointmatcher_ros REQUIRED)
+find_package(rtabmap_ros REQUIRED)
 
 message("libpointmatcher_INCLUDE_DIRS: ${libpointmatcher_INCLUDE_DIRS}")
 message("libpointmatcher_LIBRARIES: ${libpointmatcher_LIBRARIES}")
