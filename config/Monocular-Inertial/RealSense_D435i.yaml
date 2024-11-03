@@ -6,6 +6,7 @@
 File.version: "1.0"
 
 Camera.type: "PinHole"
+loopClosing: 0
 
 # Left Camera calibration and distortion parameters (OpenCV)
 # Camera1.fx: 913.848388671875

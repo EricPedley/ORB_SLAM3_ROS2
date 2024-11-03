@@ -1,6 +1,7 @@
 #include <geometry_msgs/msg/detail/transform_stamped__struct.hpp>
 #include <pcl/cloud_iterator.h>
 #include <pcl/common/centroid.h>
+#include <pcl/conversions.h>
 #include <pcl/filters/filter.h>
 #include <pcl/filters/radius_outlier_removal.h>
 #include <pcl/filters/statistical_outlier_removal.h>
@@ -132,11 +133,60 @@ public:
       pcl::io::savePCDFileBinary(std::string(PROJECT_PATH) + "/maps/" +
                                    generate_timestamp_string() + ".pcd",
                                  live_pcl_cloud_);
+      save_occupancy_grid_nav2();
     });
     initialize_variables();
   }
 
 private:
+  void save_occupancy_grid_nav2()
+  {
+    int width = live_occupancy_grid_->info.width;
+    int height = live_occupancy_grid_->info.height;
+
+    // Convert occupancy grid data to an OpenCV image
+    cv::Mat image(height, width, CV_8UC1);
+    for (int y = 0; y < height; ++y) {
+      for (int x = 0; x < width; ++x) {
+        int8_t occupancy_value = live_occupancy_grid_->data[y * width + x];
+        uint8_t pixel_value;
+
+        // Map occupancy values to grayscale: unknown (-1) to 128, free (0) to
+        // 255, occupied (100) to 0
+        if (occupancy_value == -1)
+          pixel_value = 128; // Unknown
+        else if (occupancy_value == 0)
+          pixel_value = 255; // Free space
+        else
+          pixel_value = 0; // Occupied
+
+        image.at<uint8_t>(y, x) = pixel_value;
+      }
+    }
+
+    // Save the image as a PNG file
+    std::string timestamp = generate_timestamp_string();
+    cv::imwrite(std::string(PROJECT_PATH) + "/orb_maps/" + timestamp + ".png",
+                image);
+    YAML::Emitter out;
+    out << YAML::BeginMap;
+    out << YAML::Key << "image" << YAML::Value << timestamp + ".png";
+    out << YAML::Key << "resolution" << YAML::Value
+        << live_occupancy_grid_->info.resolution;
+    out << YAML::Key << "origin" << YAML::Value << YAML::BeginSeq
+        << live_occupancy_grid_->info.origin.position.x
+        << live_occupancy_grid_->info.origin.position.y
+        << live_occupancy_grid_->info.origin.position.z << YAML::EndSeq;
+    out << YAML::Key << "occupied_thresh" << YAML::Value << 0.65;
+    out << YAML::Key << "free_thresh" << YAML::Value << 0.196;
+    out << YAML::EndMap;
+
+    std::ofstream fout(std::string(PROJECT_PATH) + "/orb_maps/" + timestamp +
+                       ".yaml");
+    fout << out.c_str();
+    fout.close();
+  }
+
   pcl::PointCloud<pcl::PointXYZ>::Ptr
   filter_point_cloud(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud)
   {
