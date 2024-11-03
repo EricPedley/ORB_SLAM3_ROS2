@@ -129,7 +129,7 @@ public:
 
     // create timer
     timer = create_wall_timer(
-      500ms, std::bind(&ImuMonoRealSense::timer_callback, this),
+      100ms, std::bind(&ImuMonoRealSense::timer_callback, this),
       timer_callback_group_);
 
     rclcpp::on_shutdown([this]() {
@@ -390,28 +390,28 @@ private:
 
       geometry_msgs::msg::TransformStamped odom_tf;
       odom_tf.header.stamp = time_now;
-      odom_tf.header.frame_id = "live_map";
+      odom_tf.header.frame_id = "odom";
       odom_tf.child_frame_id = "base_link";
       odom_tf.transform.translation.x = Twc.translation().x();
       odom_tf.transform.translation.y = Twc.translation().y();
       odom_tf.transform.translation.z = Twc.translation().z();
-      odom_tf.transform.rotation.x = q_combined.x();
-      odom_tf.transform.rotation.y = q_combined.y();
-      odom_tf.transform.rotation.z = q_combined.z();
-      odom_tf.transform.rotation.w = q_combined.w();
+      odom_tf.transform.rotation.x = Twc.unit_quaternion().x();
+      odom_tf.transform.rotation.y = Twc.unit_quaternion().y();
+      odom_tf.transform.rotation.z = Twc.unit_quaternion().z();
+      odom_tf.transform.rotation.w = Twc.unit_quaternion().w();
       tf_broadcaster->sendTransform(odom_tf);
 
       nav_msgs::msg::Odometry odom;
       odom.header.stamp = time_now;
-      odom.header.frame_id = "live_map";
+      odom.header.frame_id = "odom";
       odom.child_frame_id = "base_link";
       odom.pose.pose.position.x = Twc.translation().x();
       odom.pose.pose.position.y = Twc.translation().y();
       odom.pose.pose.position.z = Twc.translation().z();
-      odom.pose.pose.orientation.x = q_combined.x();
-      odom.pose.pose.orientation.y = q_combined.y();
-      odom.pose.pose.orientation.z = q_combined.z();
-      odom.pose.pose.orientation.w = q_combined.w();
+      odom.pose.pose.orientation.x = Twc.unit_quaternion().x();
+      odom.pose.pose.orientation.y = Twc.unit_quaternion().y();
+      odom.pose.pose.orientation.z = Twc.unit_quaternion().z();
+      odom.pose.pose.orientation.w = Twc.unit_quaternion().w();
       odom_publisher_->publish(odom);
 
       geometry_msgs::msg::Pose pose;
@@ -426,17 +426,17 @@ private:
       pose_array_.poses.push_back(pose);
       pose_array_publisher_->publish(pose_array_);
 
-      geometry_msgs::msg::TransformStamped base_link_tf;
-      base_link_tf.header.stamp = time_now;
-      base_link_tf.header.frame_id = "live_map";
-      base_link_tf.child_frame_id = "base_link";
-      base_link_tf.transform.translation.x = Twc.translation().x();
-      base_link_tf.transform.translation.y = Twc.translation().y();
-      base_link_tf.transform.rotation.x = q_combined.x();
-      base_link_tf.transform.rotation.y = q_combined.y();
-      base_link_tf.transform.rotation.z = q_combined.z();
-      base_link_tf.transform.rotation.w = q_combined.w();
-      tf_broadcaster->sendTransform(base_link_tf);
+      // geometry_msgs::msg::TransformStamped base_link_tf;
+      // base_link_tf.header.stamp = time_now;
+      // base_link_tf.header.frame_id = "live_map";
+      // base_link_tf.child_frame_id = "base_link";
+      // base_link_tf.transform.translation.x = Twc.translation().x();
+      // base_link_tf.transform.translation.y = Twc.translation().y();
+      // base_link_tf.transform.rotation.x = q_combined.x();
+      // base_link_tf.transform.rotation.y = q_combined.y();
+      // base_link_tf.transform.rotation.z = q_combined.z();
+      // base_link_tf.transform.rotation.w = q_combined.w();
+      // tf_broadcaster->sendTransform(base_link_tf);
 
       geometry_msgs::msg::TransformStamped point_cloud_tf;
       point_cloud_tf.header.stamp = time_now;

@@ -10,3 +10,4 @@ videos/
 **ORBvoc.txt**
 .cache
 *.pcd
+occupancy_grids/
