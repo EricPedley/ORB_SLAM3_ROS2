@@ -56,6 +56,7 @@ find_package(libpointmatcher REQUIRED)
 find_package(libpointmatcher_ros REQUIRED)
 find_package(rtabmap_ros REQUIRED)
 find_package(yaml-cpp REQUIRED)
+find_package(nav2_map_server REQUIRED)
 
 message("libpointmatcher_INCLUDE_DIRS: ${libpointmatcher_INCLUDE_DIRS}")
 message("libpointmatcher_LIBRARIES: ${libpointmatcher_LIBRARIES}")
@@ -87,6 +88,11 @@ set(THIS_PACKAGE_INCLUDE_DEPENDS
   image_transport
   pcl_ros
   pcl_conversions
+  nav2_map_server
+  yaml-cpp
+  rtabmap_ros
+  libpointmatcher
+  libpointmatcher_ros
   ORB_SLAM3
 )
 
@@ -179,6 +185,16 @@ install(
 install(
   DIRECTORY config/
   DESTINATION share/${PROJECT_NAME}/config
+)
+
+install(
+  DIRECTORY maps/
+  DESTINATION share/${PROJECT_NAME}/maps
+)
+
+install(
+    DIRECTORY occupancy_grids/
+    DESTINATION share/${PROJECT_NAME}/orb_maps
 )
 
 # install video files

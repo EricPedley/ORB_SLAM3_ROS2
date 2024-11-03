@@ -1,4 +1,5 @@
 #include <geometry_msgs/msg/detail/transform_stamped__struct.hpp>
+#include <pcl/PCLPointCloud2.h>
 #include <pcl/cloud_iterator.h>
 #include <pcl/common/centroid.h>
 #include <pcl/conversions.h>
@@ -25,6 +26,8 @@
 #include <tf2/LinearMath/Matrix3x3.h>
 #include <tf2/LinearMath/Quaternion.h>
 #include <tf2_ros/transform_broadcaster.h>
+
+#include "nav2_map_server/map_io.hpp"
 
 #include <chrono>
 #include <sstream>
@@ -133,64 +136,25 @@ public:
       pcl::io::savePCDFileBinary(std::string(PROJECT_PATH) + "/maps/" +
                                    generate_timestamp_string() + ".pcd",
                                  live_pcl_cloud_);
-      save_occupancy_grid_nav2();
+      nav2_map_server::SaveParameters save_params;
+      save_params.map_file_name = std::string(PROJECT_PATH) + "/occupancy_grids/" +
+                                  generate_timestamp_string();
+      save_params.image_format = "pgm";
+      save_params.free_thresh = 0.196;
+      save_params.occupied_thresh = 0.65;
+      nav2_map_server::saveMapToFile(*live_occupancy_grid_, save_params);
     });
+
     initialize_variables();
   }
 
 private:
-  void save_occupancy_grid_nav2()
-  {
-    int width = live_occupancy_grid_->info.width;
-    int height = live_occupancy_grid_->info.height;
-
-    // Convert occupancy grid data to an OpenCV image
-    cv::Mat image(height, width, CV_8UC1);
-    for (int y = 0; y < height; ++y) {
-      for (int x = 0; x < width; ++x) {
-        int8_t occupancy_value = live_occupancy_grid_->data[y * width + x];
-        uint8_t pixel_value;
-
-        // Map occupancy values to grayscale: unknown (-1) to 128, free (0) to
-        // 255, occupied (100) to 0
-        if (occupancy_value == -1)
-          pixel_value = 128; // Unknown
-        else if (occupancy_value == 0)
-          pixel_value = 255; // Free space
-        else
-          pixel_value = 0; // Occupied
-
-        image.at<uint8_t>(y, x) = pixel_value;
-      }
-    }
-
-    // Save the image as a PNG file
-    std::string timestamp = generate_timestamp_string();
-    cv::imwrite(std::string(PROJECT_PATH) + "/orb_maps/" + timestamp + ".png",
-                image);
-    YAML::Emitter out;
-    out << YAML::BeginMap;
-    out << YAML::Key << "image" << YAML::Value << timestamp + ".png";
-    out << YAML::Key << "resolution" << YAML::Value
-        << live_occupancy_grid_->info.resolution;
-    out << YAML::Key << "origin" << YAML::Value << YAML::BeginSeq
-        << live_occupancy_grid_->info.origin.position.x
-        << live_occupancy_grid_->info.origin.position.y
-        << live_occupancy_grid_->info.origin.position.z << YAML::EndSeq;
-    out << YAML::Key << "occupied_thresh" << YAML::Value << 0.65;
-    out << YAML::Key << "free_thresh" << YAML::Value << 0.196;
-    out << YAML::EndMap;
-
-    std::ofstream fout(std::string(PROJECT_PATH) + "/orb_maps/" + timestamp +
-                       ".yaml");
-    fout << out.c_str();
-    fout.close();
-  }
 
   pcl::PointCloud<pcl::PointXYZ>::Ptr
   filter_point_cloud(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud)
   {
     // statistical outlier removal
+    pcl::PCLPointCloud2 thing;
     pcl::PointCloud<pcl::PointXYZ>::Ptr sor_cloud(
       new pcl::PointCloud<pcl::PointXYZ>);
     pcl::StatisticalOutlierRemoval<pcl::PointXYZ> sor;
@@ -272,7 +236,7 @@ private:
   void initialize_variables()
   {
     pose_array_ = geometry_msgs::msg::PoseArray();
-    pose_array_.header.frame_id = "transformed_map";
+    pose_array_.header.frame_id = "live_map";
 
     live_pcl_cloud_msg_ = sensor_msgs::msg::PointCloud2();
     live_pcl_cloud_msg_.header.frame_id = "live_map";
@@ -426,7 +390,7 @@ private:
 
       geometry_msgs::msg::TransformStamped odom_tf;
       odom_tf.header.stamp = time_now;
-      odom_tf.header.frame_id = "odom";
+      odom_tf.header.frame_id = "live_map";
       odom_tf.child_frame_id = "base_link";
       odom_tf.transform.translation.x = Twc.translation().x();
       odom_tf.transform.translation.y = Twc.translation().y();
@@ -439,7 +403,7 @@ private:
 
       nav_msgs::msg::Odometry odom;
       odom.header.stamp = time_now;
-      odom.header.frame_id = "odom";
+      odom.header.frame_id = "live_map";
       odom.child_frame_id = "base_link";
       odom.pose.pose.position.x = Twc.translation().x();
       odom.pose.pose.position.y = Twc.translation().y();
@@ -450,29 +414,29 @@ private:
       odom.pose.pose.orientation.w = q_combined.w();
       odom_publisher_->publish(odom);
 
-      // geometry_msgs::msg::Pose pose;
-      // pose.position.x = Twc.translation().x();
-      // pose.position.y = Twc.translation().y();
-      // // pose.position.z = Twc.translation().z();
-      // pose.orientation.x = q_combined.x();
-      // pose.orientation.y = q_combined.y();
-      // pose.orientation.z = q_combined.z();
-      // pose.orientation.w = q_combined.w();
-      // pose_array_.header.stamp = time_now;
-      // pose_array_.poses.push_back(pose);
-      // pose_array_publisher_->publish(pose_array_);
+      geometry_msgs::msg::Pose pose;
+      pose.position.x = Twc.translation().x();
+      pose.position.y = Twc.translation().y();
+      // pose.position.z = Twc.translation().z();
+      pose.orientation.x = q_combined.x();
+      pose.orientation.y = q_combined.y();
+      pose.orientation.z = q_combined.z();
+      pose.orientation.w = q_combined.w();
+      pose_array_.header.stamp = time_now;
+      pose_array_.poses.push_back(pose);
+      pose_array_publisher_->publish(pose_array_);
 
-      // geometry_msgs::msg::TransformStamped base_link_tf;
-      // base_link_tf.header.stamp = time_now;
-      // base_link_tf.header.frame_id = "live_map";
-      // base_link_tf.child_frame_id = "base_link";
-      // base_link_tf.transform.translation.x = Twc.translation().x();
-      // base_link_tf.transform.translation.y = Twc.translation().y();
-      // base_link_tf.transform.rotation.x = q_combined.x();
-      // base_link_tf.transform.rotation.y = q_combined.y();
-      // base_link_tf.transform.rotation.z = q_combined.z();
-      // base_link_tf.transform.rotation.w = q_combined.w();
-      // tf_broadcaster->sendTransform(base_link_tf);
+      geometry_msgs::msg::TransformStamped base_link_tf;
+      base_link_tf.header.stamp = time_now;
+      base_link_tf.header.frame_id = "live_map";
+      base_link_tf.child_frame_id = "base_link";
+      base_link_tf.transform.translation.x = Twc.translation().x();
+      base_link_tf.transform.translation.y = Twc.translation().y();
+      base_link_tf.transform.rotation.x = q_combined.x();
+      base_link_tf.transform.rotation.y = q_combined.y();
+      base_link_tf.transform.rotation.z = q_combined.z();
+      base_link_tf.transform.rotation.w = q_combined.w();
+      tf_broadcaster->sendTransform(base_link_tf);
 
       geometry_msgs::msg::TransformStamped point_cloud_tf;
       point_cloud_tf.header.stamp = time_now;
@@ -480,11 +444,11 @@ private:
       point_cloud_tf.child_frame_id = "point_cloud";
       tf_broadcaster->sendTransform(point_cloud_tf);
 
-      // geometry_msgs::msg::TransformStamped live_map_tf;
-      // live_map_tf.header.stamp = time_now;
-      // live_map_tf.header.frame_id = "map";
-      // live_map_tf.child_frame_id = "live_map";
-      // tf_broadcaster->sendTransform(live_map_tf);
+      geometry_msgs::msg::TransformStamped live_map_tf;
+      live_map_tf.header.stamp = time_now;
+      live_map_tf.header.frame_id = "map";
+      live_map_tf.child_frame_id = "live_map";
+      tf_broadcaster->sendTransform(live_map_tf);
 
       live_pcl_cloud_ = orb_slam3_system_->GetMapPCL();
 
