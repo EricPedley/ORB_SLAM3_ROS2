@@ -9,7 +9,17 @@
 #include <pcl/filters/voxel_grid.h>
 #include <pcl/io/pcd_io.h>
 #include <pcl/io/ply_io.h>
+#include <pcl/point_cloud.h>
 #include <pcl_conversions/pcl_conversions.h>
+#include <pcl_ros/transforms.hpp>
+
+// #include <rtabmap-0.21/rtabmap/core/DBDriver.h>
+#include <rtabmap/core/DBDriver.h>
+#include <rtabmap/core/DBDriverSqlite3.h>
+#include <rtabmap/core/Graph.h>
+#include <rtabmap/core/Rtabmap.h>
+#include <rtabmap/core/util3d.h>
+#include <rtabmap/utilite/UTimer.h>
 
 #include <geometry_msgs/msg/pose_array.hpp>
 #include <geometry_msgs/msg/quaternion.hpp>
@@ -39,6 +49,9 @@
 
 #include "pointmatcher/PointMatcher.h"
 #include "pointmatcher_ros/PointMatcher_ROS.h"
+#include "rtabmap/core/DBDriver.h"
+#include "rtabmap/core/Parameters.h"
+#include "rtabmap/core/SensorData.h"
 
 #include <rclcpp/rclcpp.hpp>
 
@@ -57,10 +70,16 @@ public:
     // declare parameters
     declare_parameter("sensor_type", "imu-monocular");
     declare_parameter("use_pangolin", true);
+    declare_parameter("rtabmap_db", "rtabmap.db");
 
     // get parameters
     sensor_type_param = get_parameter("sensor_type").as_string();
     use_pangolin = get_parameter("use_pangolin").as_bool();
+    rtabmap_db_ = get_parameter("rtabmap_db").as_string();
+    rtabmap_db_ = std::string(PROJECT_PATH) + "/maps/" + rtabmap_db_;
+
+    // rtabmap::DBDriver driver;
+    // driver->openConnection("rtabmap.db");
 
     // define callback groups
     image_callback_group_ =
@@ -109,6 +128,9 @@ public:
     odom_publisher_ = create_publisher<nav_msgs::msg::Odometry>("orb_odom", 10);
     orb_image_publisher_ =
       create_publisher<sensor_msgs::msg::Image>("/orb_camera/image", 10);
+    imu_publisher_ =
+      create_publisher<sensor_msgs::msg::Imu>("/orb_camera/imu", 10);
+
     // create subscriptions
     rclcpp::QoS image_qos(rclcpp::KeepLast(10));
     image_qos.reliability(RMW_QOS_POLICY_RELIABILITY_RELIABLE);
@@ -124,6 +146,11 @@ public:
       "camera/camera/imu", imu_qos,
       std::bind(&ImuMonoRealSense::imu_callback, this, _1), imu_options);
 
+    // create service clients
+    rtabmap_reset_service_ = create_client<std_srvs::srv::Empty>(
+      "rtabmap/reset", rmw_qos_profile_services_default,
+      slam_service_callback_group_);
+
     // tf broadcaster
     tf_broadcaster = std::make_unique<tf2_ros::TransformBroadcaster>(*this);
 
@@ -137,7 +164,8 @@ public:
                                    generate_timestamp_string() + ".pcd",
                                  live_pcl_cloud_);
       nav2_map_server::SaveParameters save_params;
-      save_params.map_file_name = std::string(PROJECT_PATH) + "/occupancy_grids/" +
+      save_params.map_file_name = std::string(PROJECT_PATH) +
+                                  "/occupancy_grids/" +
                                   generate_timestamp_string();
       save_params.image_format = "pgm";
       save_params.free_thresh = 0.196;
@@ -149,12 +177,103 @@ public:
   }
 
 private:
+  bool load_rtabmap_db(const std::string &db_path)
+  {
+    pcl::PointCloud<pcl::PointXYZRGB> cloud;
+    rtabmap::ParametersMap parameters;
+    rtabmap::DBDriver *driver = rtabmap::DBDriver::create();
+    if (driver->openConnection(db_path)) {
+      parameters = driver->getLastParameters();
+      driver->closeConnection(false);
+    } else {
+      RCLCPP_ERROR(get_logger(), "Failed to open database");
+      return false;
+    }
+    delete driver;
+    driver = 0;
+
+    UTimer timer;
+
+    RCLCPP_INFO_STREAM(get_logger(), "Loading database: " << db_path);
+    rtabmap::Rtabmap rtabmap;
+    rtabmap.init(parameters, db_path);
+    RCLCPP_INFO_STREAM(get_logger(),
+                       "Loaded database in " << timer.ticks() << "s");
+
+    std::map<int, rtabmap::Signature> nodes;
+    std::map<int, rtabmap::Transform> optimizedPoses;
+    std::multimap<int, rtabmap::Link> links;
+    RCLCPP_INFO(get_logger(), "Optimizing the map...");
+    rtabmap.getGraph(optimizedPoses, links, true, true, &nodes, true, true,
+                     true, true);
+    printf("Optimizing the map... done (%fs, poses=%d).\n", timer.ticks(),
+           (int)optimizedPoses.size());
+
+    RCLCPP_INFO_STREAM(get_logger(), "Optimizing the map... done ("
+                                       << timer.ticks() << "s, poses="
+                                       << optimizedPoses.size() << ").");
+
+    if (optimizedPoses.size() == 0) {
+      RCLCPP_ERROR(get_logger(), "No optimized poses found");
+      return false;
+    }
+
+    pcl::PointCloud<pcl::PointXYZRGB>::Ptr assembledCloud(
+      new pcl::PointCloud<pcl::PointXYZRGB>);
+    pcl::PointCloud<pcl::PointXYZI>::Ptr assembledCloudI(
+      new pcl::PointCloud<pcl::PointXYZI>);
+    std::map<int, rtabmap::Transform> robotPoses;
+    std::vector<std::map<int, rtabmap::Transform>> cameraPoses;
+    std::map<int, rtabmap::Transform> scanPoses;
+    std::map<int, double> cameraStamps;
+    std::map<int, std::vector<rtabmap::CameraModel>> cameraModels;
+    std::map<int, cv::Mat> cameraDepths;
+    int imagesExported = 0;
+    std::vector<int> rawViewpointIndices;
+    std::map<int, rtabmap::Transform> rawViewpoints /*  */;
+    for (std::map<int, rtabmap::Transform>::iterator iter =
+           optimizedPoses.lower_bound(1);
+         iter != optimizedPoses.end(); ++iter) {
+      rtabmap::Signature node = nodes.find(iter->first)->second;
+
+      // uncompress data
+      std::vector<rtabmap::CameraModel> models =
+        node.sensorData().cameraModels();
+      std::vector<rtabmap::StereoCameraModel> stereoModels =
+        node.sensorData().stereoCameraModels();
+      cv::Mat rgb;
+      cv::Mat depth;
+
+      pcl::IndicesPtr indices(new std::vector<int>);
+      pcl::PointCloud<pcl::PointXYZRGB>::Ptr cloud;
+      pcl::PointCloud<pcl::PointXYZI>::Ptr cloudI;
+      if (node.getWeight() != -1) {
+        node.sensorData().uncompressData(&rgb, &depth);
+        if (depth.empty()) {
+          printf("Node %d doesn't have depth or stereo data, empty cloud is "
+                 "created (if you want to create point cloud from scan, use "
+                 "--scan option).\n",
+                 iter->first);
+        }
+        cloud = rtabmap::util3d::cloudRGBFromSensorData(
+          node.sensorData(),
+          decimation, // image decimation before creating the clouds
+          maxRange,   // maximum depth of the cloud
+          minRange, indices.get());
+        if (noiseRadius > 0.0f && noiseMinNeighbors > 0) {
+          indices = util3d::radiusFiltering(cloud, indices, noiseRadius,
+                                            noiseMinNeighbors);
+        }
+      }
+    }
+
+    return true;
+  }
 
   pcl::PointCloud<pcl::PointXYZ>::Ptr
   filter_point_cloud(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud)
   {
     // statistical outlier removal
-    pcl::PCLPointCloud2 thing;
     pcl::PointCloud<pcl::PointXYZ>::Ptr sor_cloud(
       new pcl::PointCloud<pcl::PointXYZ>);
     pcl::StatisticalOutlierRemoval<pcl::PointXYZ> sor;
@@ -345,6 +464,10 @@ private:
   void imu_callback(const sensor_msgs::msg::Imu &msg)
   {
     buf_mutex_imu_.lock();
+    sensor_msgs::msg::Imu msg_out = msg;
+    msg_out.header.stamp = get_clock()->now();
+    msg_out.header.frame_id = "base_link";
+    // imu_publisher_->publish(msg_out);
     if (!std::isnan(msg.linear_acceleration.x) &&
         !std::isnan(msg.linear_acceleration.y) &&
         !std::isnan(msg.linear_acceleration.z) &&
@@ -471,16 +594,23 @@ private:
       live_pcl_cloud_msg_.header.frame_id = "live_map";
       live_point_cloud_publisher_->publish(live_pcl_cloud_msg_);
     } else {
+      // RCLCPP_INFO_STREAM(get_logger(), "IMU not initialized");
+      rtabmap_reset_service_->async_send_request(
+        std::make_shared<std_srvs::srv::Empty::Request>());
       initialize_variables();
     }
     if (!inertial_ba1_ && orb_slam3_system_->GetInertialBA1()) {
       inertial_ba1_ = true;
+      rtabmap_reset_service_->async_send_request(
+        std::make_shared<std_srvs::srv::Empty::Request>());
       initialize_variables();
       RCLCPP_INFO(get_logger(), "Inertial BA1 complete");
     }
 
     if (!inertial_ba2_ && orb_slam3_system_->GetInertialBA2()) {
       inertial_ba2_ = true;
+      rtabmap_reset_service_->async_send_request(
+        std::make_shared<std_srvs::srv::Empty::Request>());
       initialize_variables();
       RCLCPP_INFO(get_logger(), "Inertial BA2 complete");
     }
@@ -494,14 +624,18 @@ private:
     pose_array_publisher_;
   rclcpp::Publisher<nav_msgs::msg::OccupancyGrid>::SharedPtr
     live_occupancy_grid_publisher_;
-  rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr orb_image_publisher_;
   rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr odom_publisher_;
+  rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr orb_image_publisher_;
+  rclcpp::Publisher<sensor_msgs::msg::Imu>::SharedPtr imu_publisher_;
+  rclcpp::Publisher<sensor_msgs::msg::Imu>::SharedPtr rtabmap_publisher_;
+  rclcpp::Client<std_srvs::srv::Empty>::SharedPtr rtabmap_reset_service_;
   rclcpp::TimerBase::SharedPtr timer;
 
   rclcpp::CallbackGroup::SharedPtr image_callback_group_;
   rclcpp::CallbackGroup::SharedPtr imu_callback_group_;
   rclcpp::CallbackGroup::SharedPtr slam_service_callback_group_;
   rclcpp::CallbackGroup::SharedPtr timer_callback_group_;
+  rclcpp::CallbackGroup::SharedPtr rtabmap_reset_callback_group_;
 
   std::unique_ptr<tf2_ros::TransformBroadcaster> tf_broadcaster;
 
@@ -510,6 +644,7 @@ private:
 
   std::string sensor_type_param;
   bool use_pangolin;
+  std::string rtabmap_db_;
 
   std::vector<geometry_msgs::msg::Vector3> vGyro;
   std::vector<double> vGyro_times;

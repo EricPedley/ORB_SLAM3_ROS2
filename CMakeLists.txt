@@ -55,6 +55,8 @@ find_package(ORB_SLAM3 REQUIRED)
 find_package(libpointmatcher REQUIRED)
 find_package(libpointmatcher_ros REQUIRED)
 find_package(rtabmap_ros REQUIRED)
+find_package(RTABMap REQUIRED)
+find_package(imu_filter_madgwick REQUIRED)
 find_package(yaml-cpp REQUIRED)
 find_package(nav2_map_server REQUIRED)
 
@@ -131,6 +133,8 @@ set(ORB_SLAM3_ROOT_DIR ${CMAKE_CURRENT_SOURCE_DIR}/ORB_SLAM3)
 
 include_directories(
     include
+    /opt/ros/humble/include/rtabmap-0.21
+    ${rtabmap_INCLUDE_DIRS}
     ${ORB_SLAM3_ROOT_DIR}/include
     ${ORB_SLAM3_ROOT_DIR}/include/CameraModels
     ${ORB_SLAM3_ROOT_DIR}/Thirdparty/Sophus
@@ -147,7 +151,7 @@ target_include_directories(imu_mono_node_cpp PUBLIC
     ${ORB_SLAM3_INCLUDE_DIR}
 )
 
-target_link_libraries(imu_mono_node_cpp PUBLIC ${ORB_SLAM3_LIBRARY} ${PCL_LIBRARIES} ${libpointmatcher_LIBRARIES} ${libpointmatcher_ros_LIBRARIES})
+target_link_libraries(imu_mono_node_cpp PUBLIC ${ORB_SLAM3_LIBRARY} ${PCL_LIBRARIES} ${libpointmatcher_LIBRARIES} ${libpointmatcher_ros_LIBRARIES} ${rtabmap_LIBRARIES})
 target_link_libraries(icp_localization_node PUBLIC ${PCL_LIBRARIES} ${libpointmatcher_LIBRARIES} ${libpointmatcher_ros_LIBRARIES})
 target_link_libraries(orb_camera_info_node PUBLIC yaml-cpp)
 

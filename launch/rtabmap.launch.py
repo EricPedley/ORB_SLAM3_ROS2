@@ -65,6 +65,24 @@ def generate_launch_description():
                 output="screen",
             ),
             Node(
+                package="imu_filter_madgwick",
+                executable="imu_filter_madgwick_node",
+                output="screen",
+                parameters=[
+                    {
+                        "use_sim_time": True,
+                        "use_mag": False,
+                        "publish_tf": True,
+                        "world_frame": "odom",
+                        "base_link_frame": "base_link",
+                    }
+                ],
+                remappings=[
+                    ("/imu/data_raw", "/orb_camera/imu"),
+                    ("/imu/data", "/rtabmap/imu"),
+                ],
+            ),
+            Node(
                 package="rtabmap_slam",
                 executable="rtabmap",
                 output="screen",
@@ -83,13 +101,14 @@ def generate_launch_description():
                         # "odom_tf_linear_variance": 0.0005,
                         # "odom_tf_angular_variance": 0.0005,
                         "Mem/StereoFromMotion": "true",
-                        # "initial_pose": "0 0 0 0 0 0", # only for localization
+                        # "initial_pose": "0 0 0 0 0 0", # only for localizing
                     }
                 ],
                 remappings=[
                     ("rgb/image", "/orb_camera/image"),
                     ("rgb/camera_info", "/orb_camera/info"),
                     ("odom", "/orb_odom"),
+                    ("imu", "/rtabmap/imu")
                 ],
                 arguments=["--delete_db_on_start"],
             ),
