@@ -19,6 +19,7 @@
 #include <rtabmap/core/Graph.h>
 #include <rtabmap/core/Rtabmap.h>
 #include <rtabmap/core/util3d.h>
+#include <rtabmap/core/util3d_filtering.h>
 #include <rtabmap/utilite/UTimer.h>
 
 #include <geometry_msgs/msg/pose_array.hpp>
@@ -70,13 +71,23 @@ public:
     // declare parameters
     declare_parameter("sensor_type", "imu-monocular");
     declare_parameter("use_pangolin", true);
-    declare_parameter("rtabmap_db", "rtabmap.db");
+    declare_parameter("rtabmap_db", "");
 
     // get parameters
     sensor_type_param = get_parameter("sensor_type").as_string();
     use_pangolin = get_parameter("use_pangolin").as_bool();
     rtabmap_db_ = get_parameter("rtabmap_db").as_string();
-    rtabmap_db_ = std::string(PROJECT_PATH) + "/maps/" + rtabmap_db_;
+    std::string rtabmap_db_path = std::string(PROJECT_PATH) + "/maps/" + rtabmap_db_;
+
+    // load rtabmap database
+    if (!rtabmap_db_.empty()) {
+      if (!load_rtabmap_db(rtabmap_db_path)) {
+        RCLCPP_ERROR(get_logger(), "Failed to load rtabmap database");
+        rclcpp::shutdown();
+      }
+    }
+
+
 
     // rtabmap::DBDriver driver;
     // driver->openConnection("rtabmap.db");
@@ -239,8 +250,6 @@ private:
       // uncompress data
       std::vector<rtabmap::CameraModel> models =
         node.sensorData().cameraModels();
-      std::vector<rtabmap::StereoCameraModel> stereoModels =
-        node.sensorData().stereoCameraModels();
       cv::Mat rgb;
       cv::Mat depth;
 
@@ -255,16 +264,24 @@ private:
                  "--scan option).\n",
                  iter->first);
         }
+        int decimation = 4;
+        int maxRange = 4.0;
+        int minRange = 0.0;
+        float noiseRadius = 0.0f;
+        int noiseMinNeighbors = 5;
         cloud = rtabmap::util3d::cloudRGBFromSensorData(
           node.sensorData(),
           decimation, // image decimation before creating the clouds
           maxRange,   // maximum depth of the cloud
           minRange, indices.get());
         if (noiseRadius > 0.0f && noiseMinNeighbors > 0) {
-          indices = util3d::radiusFiltering(cloud, indices, noiseRadius,
-                                            noiseMinNeighbors);
+          indices = rtabmap::util3d::radiusFiltering(
+            cloud, indices, noiseRadius, noiseMinNeighbors);
         }
       }
+
+      RCLCPP_INFO_STREAM(get_logger(),
+                         "successfully loaded cloud: " << cloud->size());
     }
 
     return true;
