@@ -76,14 +76,6 @@ public:
     std::string rtabmap_db_path =
       std::string(PROJECT_PATH) + "/maps/" + rtabmap_db_;
 
-    // load rtabmap database
-    if (!rtabmap_db_.empty()) {
-      if (!load_rtabmap_db(rtabmap_db_path)) {
-        RCLCPP_ERROR(get_logger(), "Failed to load rtabmap database");
-        rclcpp::shutdown();
-      }
-    }
-
     // define callback groups
     image_callback_group_ =
       create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
@@ -180,106 +172,6 @@ public:
   }
 
 private:
-  bool load_rtabmap_db(const std::string &db_path)
-  {
-    pcl::PointCloud<pcl::PointXYZRGB> cloud;
-    rtabmap::ParametersMap parameters;
-    rtabmap::DBDriver *driver = rtabmap::DBDriver::create();
-
-    if (driver->openConnection(db_path)) {
-      parameters = driver->getLastParameters();
-      driver->closeConnection(false);
-    } else {
-      RCLCPP_ERROR(get_logger(), "Failed to open database");
-      return false;
-    }
-    delete driver;
-    driver = 0;
-
-    UTimer timer;
-
-    RCLCPP_INFO_STREAM(get_logger(), "Loading database: " << db_path);
-    rtabmap::Rtabmap rtabmap;
-    rtabmap.init(parameters, db_path);
-    RCLCPP_INFO_STREAM(get_logger(),
-                       "Loaded database in " << timer.ticks() << "s");
-
-    // std::map<int, rtabmap::Signature> nodes;
-    // std::map<int, rtabmap::Transform> optimizedPoses;
-    // std::multimap<int, rtabmap::Link> links;
-    // RCLCPP_INFO(get_logger(), "Optimizing the map...");
-    // rtabmap.getGraph(optimizedPoses, links, true, true, &nodes, true, true,
-    //                  true, true);
-    // printf("Optimizing the map... done (%fs, poses=%d).\n", timer.ticks(),
-    //        (int)optimizedPoses.size());
-    //
-    // RCLCPP_INFO_STREAM(get_logger(), "Optimizing the map... done ("
-    //                                    << timer.ticks() << "s, poses="
-    //                                    << optimizedPoses.size() << ").");
-    //
-    // if (optimizedPoses.size() == 0) {
-    //   RCLCPP_ERROR(get_logger(), "No optimized poses found");
-    //   return false;
-    // }
-    //
-    // pcl::PointCloud<pcl::PointXYZRGB>::Ptr assembledCloud(
-    //   new pcl::PointCloud<pcl::PointXYZRGB>);
-    // pcl::PointCloud<pcl::PointXYZI>::Ptr assembledCloudI(
-    //   new pcl::PointCloud<pcl::PointXYZI>);
-    // std::map<int, rtabmap::Transform> robotPoses;
-    // std::vector<std::map<int, rtabmap::Transform>> cameraPoses;
-    // std::map<int, rtabmap::Transform> scanPoses;
-    // std::map<int, double> cameraStamps;
-    // std::map<int, std::vector<rtabmap::CameraModel>> cameraModels;
-    // std::map<int, cv::Mat> cameraDepths;
-    // int imagesExported = 0;
-    // std::vector<int> rawViewpointIndices;
-    // std::map<int, rtabmap::Transform> rawViewpoints /*  */;
-    // for (std::map<int, rtabmap::Transform>::iterator iter =
-    //        optimizedPoses.lower_bound(1);
-    //      iter != optimizedPoses.end(); ++iter) {
-    //   rtabmap::Signature node = nodes.find(iter->first)->second;
-    //
-    //   // uncompress data
-    //   std::vector<rtabmap::CameraModel> models =
-    //     node.sensorData().cameraModels();
-    //   cv::Mat rgb;
-    //   cv::Mat depth;
-    //
-    //   pcl::IndicesPtr indices(new std::vector<int>);
-    //   pcl::PointCloud<pcl::PointXYZRGB>::Ptr cloud;
-    //   pcl::PointCloud<pcl::PointXYZI>::Ptr cloudI;
-    //   if (node.getWeight() != -1) {
-    //     node.sensorData().uncompressData(&rgb, &depth);
-    //     if (depth.empty()) {
-    //       printf("Node %d doesn't have depth or stereo data, empty cloud is "
-    //              "created (if you want to create point cloud from scan, use "
-    //              "--scan option).\n",
-    //              iter->first);
-    //     }
-    //     int decimation = 4;
-    //     int maxRange = 4.0;
-    //     int minRange = 0.0;
-    //     float noiseRadius = 0.0f;
-    //     int noiseMinNeighbors = 5;
-    //     cloud = rtabmap::util3d::cloudRGBFromSensorData(
-    //       node.sensorData(),
-    //       decimation, // image decimation before creating the clouds
-    //       maxRange,   // maximum depth of the cloud
-    //       minRange, indices.get());
-    //     if (noiseRadius > 0.0f && noiseMinNeighbors > 0) {
-    //       indices = rtabmap::util3d::radiusFiltering(
-    //         cloud, indices, noiseRadius, noiseMinNeighbors);
-    //     }
-    //   }
-    //
-    //   RCLCPP_INFO_STREAM(get_logger(),
-    //                      "successfully loaded cloud: " << cloud->size());
-    // }
-
-    return true;
-  }
-
   pcl::PointCloud<pcl::PointXYZ>::Ptr
   filter_point_cloud(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud)
   {

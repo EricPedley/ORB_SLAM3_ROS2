@@ -1,6 +1,9 @@
 #include <chrono>
 #include <functional>
 #include <memory>
+#include <nav2_map_server/map_io.hpp>
+#include <pcl/cloud_iterator.h>
+#include <pcl/common/centroid.h>
 #include <string>
 
 #include <pcl/impl/point_types.hpp>
@@ -17,6 +20,7 @@
 #include <rtabmap/utilite/UStl.h>
 #include <rtabmap/utilite/UTimer.h>
 
+#include <nav_msgs/msg/occupancy_grid.hpp>
 #include <sensor_msgs/msg/point_cloud2.hpp>
 
 #include "rclcpp/rclcpp.hpp"
@@ -37,30 +41,107 @@ public:
     rtabmap_database_path_ =
       std::string(PROJECT_PATH) + "/maps/" + rtabmap_database;
 
-    accumulated_cloud = pcl::PointCloud<pcl::PointXYZRGB>::Ptr(
+    rtabmap_cloud_ = pcl::PointCloud<pcl::PointXYZRGB>::Ptr(
       new pcl::PointCloud<pcl::PointXYZRGB>);
 
-    load_rtabmap_db(rtabmap_database_path_);
+    if (!load_rtabmap_db(rtabmap_database_path_)) {
+      RCLCPP_ERROR(get_logger(), "Failed to load database");
+      rclcpp::shutdown();
+    }
 
-    // create publisher
-    point_cloud_publisher_ =
-      create_publisher<sensor_msgs::msg::PointCloud2>("point_cloud", 10);
+    // create publishers
+    point_cloud_publisher_ = create_publisher<sensor_msgs::msg::PointCloud2>(
+      "rtabmap_point_cloud", 10);
+    occupancy_grid_publisher_ = create_publisher<nav_msgs::msg::OccupancyGrid>(
+      "rtabmap_occupancy_grid", 10);
 
     // create timer
     timer_ = create_wall_timer(
       500ms, std::bind(&RTABMapDatabaseExtractor::timer_callback, this));
+
+    rclcpp::on_shutdown([this]() {
+      pcl::io::savePCDFileBinary(std::string(PROJECT_PATH) + "/maps/" +
+                                   generate_timestamp_string() + ".pcd",
+                                 *rtabmap_cloud_);
+      nav2_map_server::SaveParameters save_params;
+      save_params.map_file_name = std::string(PROJECT_PATH) +
+                                  "/occupancy_grids/" +
+                                  generate_timestamp_string();
+      save_params.image_format = "pgm";
+      save_params.free_thresh = 0.196;
+      save_params.occupied_thresh = 0.65;
+      nav2_map_server::saveMapToFile(*rtabmap_occupancy_grid_, save_params);
+    });
   }
 
 private:
+  nav_msgs::msg::OccupancyGrid::SharedPtr
+  point_cloud_to_occupancy_grid(pcl::PointCloud<pcl::PointXYZRGB>::Ptr cloud)
+  {
+    // calculate the centroid
+    Eigen::Matrix<float, 4, 1> centroid;
+    pcl::ConstCloudIterator<pcl::PointXYZRGB> cloud_iterator(*cloud);
+    pcl::compute3DCentroid(cloud_iterator, centroid);
+
+    float max_x = -std::numeric_limits<float>::infinity();
+    float max_y = -std::numeric_limits<float>::infinity();
+    float min_x = std::numeric_limits<float>::infinity();
+    float min_y = std::numeric_limits<float>::infinity();
+
+    for (const auto &point : cloud->points) {
+      if (point.x > max_x) {
+        max_x = point.x;
+      }
+      if (point.y > max_y) {
+        max_y = point.y;
+      }
+      if (point.x < min_x) {
+        min_x = point.x;
+      }
+      if (point.y < min_y) {
+        min_y = point.y;
+      }
+    }
+
+    nav_msgs::msg::OccupancyGrid::SharedPtr occupancy_grid =
+      std::make_shared<nav_msgs::msg::OccupancyGrid>();
+    cloud->width = cloud->points.size();
+    occupancy_grid->header.frame_id = "live_map";
+    occupancy_grid->header.stamp = get_clock()->now();
+    occupancy_grid->info.resolution = 0.05;
+    occupancy_grid->info.width =
+      std::abs(max_x - min_x) / occupancy_grid->info.resolution + 1;
+    occupancy_grid->info.height =
+      std::abs(max_y - min_y) / occupancy_grid->info.resolution + 1;
+    occupancy_grid->info.origin.position.x = min_x;
+    occupancy_grid->info.origin.position.y = min_y;
+    occupancy_grid->info.origin.position.z = 0;
+    occupancy_grid->info.origin.orientation.x = 0;
+    occupancy_grid->info.origin.orientation.y = 0;
+    occupancy_grid->info.origin.orientation.z = 0;
+    occupancy_grid->info.origin.orientation.w = 1;
+    occupancy_grid->data.resize(
+      occupancy_grid->info.width * occupancy_grid->info.height, 0);
+    for (const auto &point : cloud->points) {
+      int x = (point.x - min_x) / occupancy_grid->info.resolution;
+      int y = (point.y - min_y) / occupancy_grid->info.resolution;
+      int index = y * occupancy_grid->info.width + x;
+      occupancy_grid->data.at(index) = 100;
+    }
+    return occupancy_grid;
+  }
   void timer_callback()
   {
     pcl::PCLPointCloud2 pcl_pc2;
-    pcl::toPCLPointCloud2(*accumulated_cloud, pcl_pc2);
+    pcl::toPCLPointCloud2(*rtabmap_cloud_, pcl_pc2);
     sensor_msgs::msg::PointCloud2 msg;
     pcl_conversions::fromPCL(pcl_pc2, msg);
     msg.header.frame_id = "map";
     msg.header.stamp = get_clock()->now();
     point_cloud_publisher_->publish(msg);
+
+    rtabmap_occupancy_grid_->header.stamp = get_clock()->now();
+    occupancy_grid_publisher_->publish(*rtabmap_occupancy_grid_);
   }
   std::string generate_timestamp_string()
   {
@@ -367,25 +448,31 @@ private:
             node.sensorData().laserScanCompressed().localTransform()));
       }
       printf("Create and assemble the clouds... done (%fs, %d points).\n",
-          timer.ticks(),
-          !assembledCloud->empty() ? (int)assembledCloud->size()
-          : (int)assembledCloudI->size());
+             timer.ticks(),
+             !assembledCloud->empty() ? (int)assembledCloud->size()
+                                      : (int)assembledCloudI->size());
 
       if (imagesExported > 0)
         printf("%d images exported!\n", imagesExported);
 
-      accumulated_cloud = assembledCloud;
+      rtabmap_cloud_ = assembledCloud;
     }
     RCLCPP_INFO_STREAM(get_logger(),
-                       "Loaded " << accumulated_cloud->size() << " points");
+                       "Loaded " << rtabmap_cloud_->size() << " points");
+
+    rtabmap_occupancy_grid_ = point_cloud_to_occupancy_grid(rtabmap_cloud_);
+    rtabmap_occupancy_grid_->header.frame_id = "map";
 
     return true;
   }
   rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr
     point_cloud_publisher_;
+  rclcpp::Publisher<nav_msgs::msg::OccupancyGrid>::SharedPtr
+    occupancy_grid_publisher_;
   rclcpp::TimerBase::SharedPtr timer_;
 
-  pcl::PointCloud<pcl::PointXYZRGB>::Ptr accumulated_cloud;
+  pcl::PointCloud<pcl::PointXYZRGB>::Ptr rtabmap_cloud_;
+  nav_msgs::msg::OccupancyGrid::SharedPtr rtabmap_occupancy_grid_;
 
   std::string rtabmap_database_path_;
   bool export_images_;
