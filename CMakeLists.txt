@@ -107,10 +107,6 @@ add_executable(rtabmap_database_extractor_node
   src/rtabmap_database_extractor.cpp
 )
 
-add_executable(icp_localization_node
-  src/icp_localization.cpp
-)
-
 add_executable(orb_camera_info_node
   src/orb_camera_info.cpp
 )
@@ -120,10 +116,6 @@ ament_target_dependencies(imu_mono_node_cpp
 )
 
 ament_target_dependencies(rtabmap_database_extractor_node
-  PUBLIC ${THIS_PACKAGE_INCLUDE_DEPENDS}
-)
-
-ament_target_dependencies(icp_localization_node
   PUBLIC ${THIS_PACKAGE_INCLUDE_DEPENDS}
 )
 
@@ -154,10 +146,9 @@ target_include_directories(imu_mono_node_cpp PUBLIC
 target_link_libraries(imu_mono_node_cpp PUBLIC ${ORB_SLAM3_LIBRARY} ${PCL_LIBRARIES}
     ${libpointmatcher_LIBRARIES} ${libpointmatcher_ros_LIBRARIES} rtabmap::rtabmap)
 target_link_libraries(rtabmap_database_extractor_node PUBLIC ${PCL_LIBRARIES} rtabmap::rtabmap)
-target_link_libraries(icp_localization_node PUBLIC ${PCL_LIBRARIES} ${libpointmatcher_LIBRARIES} ${libpointmatcher_ros_LIBRARIES})
 target_link_libraries(orb_camera_info_node PUBLIC yaml-cpp)
 
-install(TARGETS icp_localization_node rtabmap_database_extractor_node imu_mono_node_cpp orb_camera_info_node
+install(TARGETS rtabmap_database_extractor_node imu_mono_node_cpp orb_camera_info_node
     DESTINATION lib/${PROJECT_NAME}
 )
 
