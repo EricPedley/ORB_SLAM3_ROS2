@@ -25,11 +25,16 @@ def generate_launch_description():
                 default_value="true",
                 description="Whether to launch RViz.",
             ),
+            DeclareLaunchArgument(
+                "export_images",
+                default_value="false",
+                description="Whether to export images from the database.",
+            ),
             Node(
                 package="orb_slam3_ros2",
                 executable="rtabmap_database_extractor_node",
                 output="screen",
-                prefix="xterm -e gdb --args",
+                # prefix="xterm -e gdb --args",
                 parameters=[
                     {
                         "rtabmap_db": LaunchConfiguration("rtabmap_db"),
