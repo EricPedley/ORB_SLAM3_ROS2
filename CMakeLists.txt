@@ -10,7 +10,7 @@ if(NOT CMAKE_BUILD_TYPE)        # If no build type is set, set one
 endif()
 
 if(NOT CMAKE_CXX_STANDARD)
-    set(CMAKE_CXX_STANDARD 14)
+    set(CMAKE_CXX_STANDARD 11)
 endif()
 
 if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
@@ -22,7 +22,7 @@ add_definitions(-DPROJECT_PATH="${PROJECT_SOURCE_DIR}")
 add_definitions(${PCL_DEFINITIONS})
 
 set(USER_HOME $ENV{HOME})
-set(CMAKE_PREFIX_PATH "${USER_HOME}/.local/include/libpointmatcher/share/libpointmatcher/cmake;${CMAKE_PREFIX_PATH}")
+# set(CMAKE_PREFIX_PATH "${USER_HOME}/.local/include/libpointmatcher/share/libpointmatcher/cmake;${CMAKE_PREFIX_PATH}")
 
 message(WARNING "CMAKE_PREFIX_PATH: ${CMAKE_PREFIX_PATH}")
 
@@ -40,7 +40,6 @@ find_package(apriltag REQUIRED)
 find_package(apriltag_ros REQUIRED)
 find_package(apriltag_msgs REQUIRED)
 find_package(cv_bridge REQUIRED)
-find_package(OpenCV 4.4 REQUIRED)
 find_package(realsense2_description REQUIRED)
 find_package(xacro REQUIRED)
 # find_package(Eigen3 3.3 REQUIRED) # Matched with Sophus
@@ -54,23 +53,19 @@ find_package(PCL 1.12 REQUIRED)
 find_package(ORB_SLAM3 REQUIRED)
 find_package(libpointmatcher REQUIRED)
 find_package(libpointmatcher_ros REQUIRED)
-find_package(rtabmap_ros REQUIRED)
 find_package(RTABMap REQUIRED)
+# find_package(rtabmap_ros REQUIRED)
 find_package(imu_filter_madgwick REQUIRED)
 find_package(yaml-cpp REQUIRED)
 find_package(nav2_map_server REQUIRED)
 
-message("libpointmatcher_INCLUDE_DIRS: ${libpointmatcher_INCLUDE_DIRS}")
-message("libpointmatcher_LIBRARIES: ${libpointmatcher_LIBRARIES}")
+message("RTABMap_INCLUDE_DIRS: ${RTABMap_INCLUDE_DIRS}")
+message("RTABMap_LIBRARIES: ${RTABMap_LIBRARIES}")
 
 if(ORB_SLAM3_LIBRARY)
     message("Found ORB_SLAM3: ${ORB_SLAM3_LIBRARY}")
 else()
     message("Could not find ORB_SLAM3 library")
-endif()
-
-if(NOT OpenCV_FOUND)
-  message(FATAL_ERROR "OpenCV not found")
 endif()
 
 set(THIS_PACKAGE_INCLUDE_DEPENDS
@@ -85,14 +80,13 @@ set(THIS_PACKAGE_INCLUDE_DEPENDS
   apriltag_ros
   apriltag_msgs
   cv_bridge
-  OpenCV
   Pangolin
   image_transport
   pcl_ros
   pcl_conversions
   nav2_map_server
   yaml-cpp
-  rtabmap_ros
+  # rtabmap_ros
   libpointmatcher
   libpointmatcher_ros
   ORB_SLAM3
@@ -109,6 +103,10 @@ add_executable(imu_mono_node_cpp
   src/imu_mono_realsense.cpp
 )
 
+add_executable(rtabmap_database_extractor_node
+  src/rtabmap_database_extractor.cpp
+)
+
 add_executable(icp_localization_node
   src/icp_localization.cpp
 )
@@ -118,6 +116,10 @@ add_executable(orb_camera_info_node
 )
 
 ament_target_dependencies(imu_mono_node_cpp
+  PUBLIC ${THIS_PACKAGE_INCLUDE_DEPENDS}
+)
+
+ament_target_dependencies(rtabmap_database_extractor_node
   PUBLIC ${THIS_PACKAGE_INCLUDE_DEPENDS}
 )
 
@@ -133,8 +135,6 @@ set(ORB_SLAM3_ROOT_DIR ${CMAKE_CURRENT_SOURCE_DIR}/ORB_SLAM3)
 
 include_directories(
     include
-    /opt/ros/humble/include/rtabmap-0.21
-    ${rtabmap_INCLUDE_DIRS}
     ${ORB_SLAM3_ROOT_DIR}/include
     ${ORB_SLAM3_ROOT_DIR}/include/CameraModels
     ${ORB_SLAM3_ROOT_DIR}/Thirdparty/Sophus
@@ -151,11 +151,13 @@ target_include_directories(imu_mono_node_cpp PUBLIC
     ${ORB_SLAM3_INCLUDE_DIR}
 )
 
-target_link_libraries(imu_mono_node_cpp PUBLIC ${ORB_SLAM3_LIBRARY} ${PCL_LIBRARIES} ${libpointmatcher_LIBRARIES} ${libpointmatcher_ros_LIBRARIES} ${rtabmap_LIBRARIES})
+target_link_libraries(imu_mono_node_cpp PUBLIC ${ORB_SLAM3_LIBRARY} ${PCL_LIBRARIES}
+    ${libpointmatcher_LIBRARIES} ${libpointmatcher_ros_LIBRARIES} rtabmap::rtabmap)
+target_link_libraries(rtabmap_database_extractor_node PUBLIC ${PCL_LIBRARIES} rtabmap::rtabmap)
 target_link_libraries(icp_localization_node PUBLIC ${PCL_LIBRARIES} ${libpointmatcher_LIBRARIES} ${libpointmatcher_ros_LIBRARIES})
 target_link_libraries(orb_camera_info_node PUBLIC yaml-cpp)
 
-install(TARGETS icp_localization_node imu_mono_node_cpp orb_camera_info_node
+install(TARGETS icp_localization_node rtabmap_database_extractor_node imu_mono_node_cpp orb_camera_info_node
     DESTINATION lib/${PROJECT_NAME}
 )
 
