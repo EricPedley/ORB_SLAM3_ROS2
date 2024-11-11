@@ -155,6 +155,7 @@ public:
       timer_callback_group_);
 
     rclcpp::on_shutdown([this]() {
+      video_writer_.release();
       pcl::io::savePCDFileBinary(std::string(PROJECT_PATH) + "/maps/" +
                                    generate_timestamp_string() + ".pcd",
                                  live_pcl_cloud_);
@@ -169,6 +170,17 @@ public:
     });
 
     initialize_variables();
+
+    std::string orb_slam_video_path = std::string(PROJECT_PATH) + "/videos/" +
+                                      generate_timestamp_string() + ".mp4";
+    video_writer_.open(orb_slam_video_path,
+                       cv::VideoWriter::fourcc('m', 'p', '4', 'v'), 30,
+                       cv::Size(640, 480));
+
+    if (!video_writer_.isOpened()) {
+      RCLCPP_ERROR(get_logger(), "Error opening video writer");
+      rclcpp::shutdown();
+    }
   }
 
 private:
@@ -352,6 +364,9 @@ private:
           if (vImuMeas.size() > 1) {
             auto Tcw =
               orb_slam3_system_->TrackMonocular(imageFrame, tImage, vImuMeas);
+            video_writer_.write(orb_slam3_system_->getPrettyFrame());
+            cv::imshow("ORB-SLAM3", orb_slam3_system_->getPrettyFrame());
+            cv::waitKey(1);
             Tcw_.translation() = Tcw.translation();
             Tcw_.setQuaternion(Tcw.unit_quaternion());
           }
@@ -569,6 +584,8 @@ private:
   bool inertial_ba1_;
   bool inertial_ba2_;
   Sophus::SE3f Tcw_;
+
+  cv::VideoWriter video_writer_;
 };
 
 int main(int argc, char *argv[])
