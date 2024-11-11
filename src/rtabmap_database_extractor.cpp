@@ -4,6 +4,7 @@
 #include <nav2_map_server/map_io.hpp>
 #include <pcl/cloud_iterator.h>
 #include <pcl/common/centroid.h>
+#include <rtabmap/core/ProgressState.h>
 #include <string>
 
 #include <pcl/impl/point_types.hpp>
@@ -16,6 +17,7 @@
 #include <rtabmap/core/util2d.h>
 #include <rtabmap/core/util3d.h>
 #include <rtabmap/core/util3d_filtering.h>
+#include <rtabmap/core/util3d_surface.h>
 #include <rtabmap/utilite/UFile.h>
 #include <rtabmap/utilite/UStl.h>
 #include <rtabmap/utilite/UTimer.h>
@@ -23,8 +25,8 @@
 #include <cv_bridge/cv_bridge.h>
 
 #include <nav_msgs/msg/occupancy_grid.hpp>
-#include <sensor_msgs/msg/point_cloud2.hpp>
 #include <sensor_msgs/msg/image.hpp>
+#include <sensor_msgs/msg/point_cloud2.hpp>
 
 #include "rclcpp/rclcpp.hpp"
 
@@ -61,8 +63,8 @@ public:
       "rtabmap_point_cloud", 10);
     occupancy_grid_publisher_ = create_publisher<nav_msgs::msg::OccupancyGrid>(
       "rtabmap_occupancy_grid", 10);
-    image_publisher_ = create_publisher<sensor_msgs::msg::Image>(
-      "rtabmap_image", 10);
+    image_publisher_ =
+      create_publisher<sensor_msgs::msg::Image>("rtabmap_image", 10);
 
     // create timer
     timer_ = create_wall_timer(
@@ -141,13 +143,13 @@ private:
   }
   void timer_callback()
   {
-    pcl::PCLPointCloud2 pcl_pc2;
-    pcl::toPCLPointCloud2(*rtabmap_cloud_, pcl_pc2);
-    sensor_msgs::msg::PointCloud2 msg;
-    pcl_conversions::fromPCL(pcl_pc2, msg);
-    msg.header.frame_id = "map";
-    msg.header.stamp = get_clock()->now();
-    point_cloud_publisher_->publish(msg);
+    // pcl::PCLPointCloud2 pcl_pc2;
+    // pcl::toPCLPointCloud2(*rtabmap_cloud_, pcl_pc2);
+    // sensor_msgs::msg::PointCloud2 msg;
+    // pcl_conversions::fromPCL(pcl_pc2, msg);
+    // msg.header.frame_id = "map";
+    // msg.header.stamp = get_clock()->now();
+    // point_cloud_publisher_->publish(msg);
 
     rtabmap_occupancy_grid_->header.stamp = get_clock()->now();
     occupancy_grid_publisher_->publish(*rtabmap_occupancy_grid_);
@@ -162,6 +164,20 @@ private:
       image_publisher_->publish(*cv_image.toImageMsg());
     } else {
       RCLCPP_INFO(get_logger(), "No more images to publish");
+    }
+
+    if (!clouds_.empty()) {
+      RCLCPP_INFO_STREAM(get_logger(), "clouds size: " << clouds_.size());
+      pcl::PCLPointCloud2 pcl_pc2;
+      pcl::toPCLPointCloud2(*clouds_.front(), pcl_pc2);
+      sensor_msgs::msg::PointCloud2 msg;
+      pcl_conversions::fromPCL(pcl_pc2, msg);
+      msg.header.frame_id = "map";
+      msg.header.stamp = get_clock()->now();
+      point_cloud_publisher_->publish(msg);
+      clouds_.erase(clouds_.begin());
+    } else {
+      RCLCPP_INFO(get_logger(), "No more clouds to publish");
     }
   }
   std::string generate_timestamp_string()
@@ -205,8 +221,8 @@ private:
     RCLCPP_INFO(get_logger(), "Optimizing the map...");
     rtabmap.getGraph(optimizedPoses, links, true, true, &nodes, true, true,
                      true, true);
-    printf("Optimizing the map... done (%fs, poses=%d).\n", timer.ticks(),
-           (int)optimizedPoses.size());
+    RCLCPP_INFO(get_logger(), "Optimizing the map... done (%fs, poses=%d).\n",
+                timer.ticks(), (int)optimizedPoses.size());
 
     RCLCPP_INFO_STREAM(get_logger(), "Optimizing the map... done ("
                                        << timer.ticks() << "s, poses="
@@ -265,8 +281,10 @@ private:
             : 0,
           &scan);
         if (scan.empty()) {
-          printf("Node %d doesn't have scan data, empty cloud is created.\n",
-                 iter->first);
+          RCLCPP_INFO(
+            get_logger(),
+            "Node %d doesn't have scan data, empty cloud is created.\n",
+            iter->first);
         }
         if (decimation > 1 || minRange > 0.0f || maxRange) {
           scan = rtabmap::util3d::commonFiltering(scan, decimation, minRange,
@@ -290,8 +308,16 @@ private:
       }
 
       node.sensorData().uncompressData(&rgb, &depth);
-      if(!rgb.empty()) {
+      if (!rgb.empty()) {
         images_.push_back(rgb);
+      }
+
+      if (!depth.empty()) {
+        RCLCPP_INFO_STREAM(get_logger(),
+                           "depth width: " << depth.cols
+                                           << " height: " << depth.rows);
+        // cv::imshow("Depth", depth);
+        // cv::waitKey(50);
       }
 
       // if(!rgb.empty()) {
@@ -310,14 +336,16 @@ private:
       //
       //   RCLCPP_INFO_STREAM(get_logger(), "resized_image width: "
       //                                      << resized_image.cols
-      //                                      << " height: " << resized_image.rows);
+      //                                      << " height: " <<
+      //                                      resized_image.rows);
       //   RCLCPP_INFO_STREAM(get_logger(), "resized_image channels: "
       //                                      << resized_image.channels());
       //   RCLCPP_INFO_STREAM(get_logger(), "resized_image type: "
       //                                      << resized_image.type());
       //
       //   cv::Mat blob =
-      //     cv::dnn::blobFromImage(resized_image, 1 / 255.0, cv::Size(640, 640),
+      //     cv::dnn::blobFromImage(resized_image, 1 / 255.0, cv::Size(640,
+      //     640),
       //                            cv::Scalar(0, 0, 0), true, false);
       //   if(blob.empty()) {
       //     RCLCPP_ERROR(get_logger(), "Failed to create blob");
@@ -340,7 +368,8 @@ private:
       //       float confidence = data[4]; // Confidence score of the detection
       //       RCLCPP_INFO_STREAM(get_logger(), "confidence: " << confidence);
       //       RCLCPP_INFO_STREAM(get_logger(),
-      //                          "confidence_threshold: " << confidence_threshold);
+      //                          "confidence_threshold: " <<
+      //                          confidence_threshold);
       //       if (confidence > confidence_threshold) {
       //         int left = (int)(data[0] * resized_image.cols);   // x1
       //         int top = (int)(data[1] * resized_image.rows);    // y1
@@ -349,7 +378,8 @@ private:
       //
       //         // Draw bounding box
       //         cv::rectangle(resized_image, cv::Point(left, top),
-      //                       cv::Point(right, bottom), cv::Scalar(0, 255, 0), 2);
+      //                       cv::Point(right, bottom), cv::Scalar(0, 255, 0),
+      //                       2);
       //
       //         // Display confidence text
       //         std::string label = cv::format("%.2f", confidence);
@@ -365,89 +395,91 @@ private:
       //   cv::waitKey(50);
       // }
 
-      if (!rgb.empty()) {
-        std::string dirSuffix = (depth.type() != CV_16UC1 &&
-                                 depth.type() != CV_32FC1 && !depth.empty())
-                                  ? "left"
-                                  : "rgb";
-        std::string base_name = generate_timestamp_string();
-        std::string dir =
-          std::string(PROJECT_PATH) + "/images/" + base_name + "_" + dirSuffix;
-        std::string output_dir = dir;
-        if (!UDirectory::exists(dir)) {
-          UDirectory::makeDir(dir);
-        }
-        bool exportImagesId = true;
-        std::string outputPath =
-          dir + "/" +
-          (exportImagesId ? uNumber2Str(iter->first)
-                          : uFormat("%f", node.getStamp())) +
-          ".jpg";
-        cv::imwrite(outputPath, rgb);
-        ++imagesExported;
-        if (!depth.empty()) {
-          std::string ext;
-          cv::Mat depthExported = depth;
-          std::string outputName;
-          std::string baseName =
-            outputName.empty()
-              ? uSplit(UFile::getName(rtabmap_database_path_), '.').front()
-              : outputName;
+      // saving images stuff
+      // if (!rgb.empty()) {
+      //   std::string dirSuffix = (depth.type() != CV_16UC1 &&
+      //                            depth.type() != CV_32FC1 && !depth.empty())
+      //                             ? "left"
+      //                             : "rgb";
+      //   std::string base_name = generate_timestamp_string();
+      //   std::string dir =
+      //     std::string(PROJECT_PATH) + "/images/" + base_name + "_" +
+      //     dirSuffix;
+      //   std::string output_dir = dir;
+      //   if (!UDirectory::exists(dir)) {
+      //     UDirectory::makeDir(dir);
+      //   }
+      // bool exportImagesId = true;
+      // std::string outputPath =
+      //   dir + "/" +
+      //   (exportImagesId ? uNumber2Str(iter->first)
+      //                   : uFormat("%f", node.getStamp())) +
+      //   ".jpg";
+      // cv::imwrite(outputPath, rgb);
+      // ++imagesExported;
+      // if (!depth.empty()) {
+      //   std::string ext;
+      //   cv::Mat depthExported = depth;
+      //   std::string outputName;
+      //   std::string baseName =
+      //     outputName.empty()
+      //       ? uSplit(UFile::getName(rtabmap_database_path_), '.').front()
+      //       : outputName;
+      //
+      //   if (depth.type() != CV_16UC1 && depth.type() != CV_32FC1) {
+      //     ext = ".jpg";
+      //     dir = output_dir + "/" + baseName + "_right";
+      //   } else {
+      //     ext = ".png";
+      //     dir = output_dir + "/" + baseName + "_depth";
+      //     if (depth.type() == CV_32FC1) {
+      //       depthExported = rtabmap::util2d::cvtDepthFromFloat(depth);
+      //     }
+      //   }
+      //   if (!UDirectory::exists(dir)) {
+      //     UDirectory::makeDir(dir);
+      //   }
+      //
+      //   outputPath = dir + "/" +
+      //                (exportImagesId ? uNumber2Str(iter->first)
+      //                                : uFormat("%f", node.getStamp())) +
+      //                ext;
+      //   cv::imwrite(outputPath, depthExported);
+      // }
 
-          if (depth.type() != CV_16UC1 && depth.type() != CV_32FC1) {
-            ext = ".jpg";
-            dir = output_dir + "/" + baseName + "_right";
-          } else {
-            ext = ".png";
-            dir = output_dir + "/" + baseName + "_depth";
-            if (depth.type() == CV_32FC1) {
-              depthExported = rtabmap::util2d::cvtDepthFromFloat(depth);
-            }
-          }
-          if (!UDirectory::exists(dir)) {
-            UDirectory::makeDir(dir);
-          }
-
-          outputPath = dir + "/" +
-                       (exportImagesId ? uNumber2Str(iter->first)
-                                       : uFormat("%f", node.getStamp())) +
-                       ext;
-          cv::imwrite(outputPath, depthExported);
-        }
-
-        // save calibration per image (calibration can change over time, e.g.
-        // camera has auto focus)
-        for (size_t i = 0; i < models.size(); ++i) {
-          rtabmap::CameraModel model = models[i];
-          std::string modelName =
-            (exportImagesId ? uNumber2Str(iter->first)
-                            : uFormat("%f", node.getStamp()));
-          if (models.size() > 1) {
-            modelName += "_" + uNumber2Str((int)i);
-          }
-          model.setName(modelName);
-          std::string dir = output_dir + "/" + base_name + "_calib";
-          if (!UDirectory::exists(dir)) {
-            UDirectory::makeDir(dir);
-          }
-          model.save(dir);
-        }
-        for (size_t i = 0; i < stereoModels.size(); ++i) {
-          rtabmap::StereoCameraModel model = stereoModels[i];
-          std::string modelName =
-            (exportImagesId ? uNumber2Str(iter->first)
-                            : uFormat("%f", node.getStamp()));
-          if (stereoModels.size() > 1) {
-            modelName += "_" + uNumber2Str((int)i);
-          }
-          model.setName(modelName, "left", "right");
-          std::string dir = output_dir + "/" + base_name + "_calib";
-          if (!UDirectory::exists(dir)) {
-            UDirectory::makeDir(dir);
-          }
-          // model.save(dir);
-        }
-      }
+      // save calibration per image (calibration can change over time, e.g.
+      // camera has auto focus)
+      // for (size_t i = 0; i < models.size(); ++i) {
+      //   rtabmap::CameraModel model = models[i];
+      //   std::string modelName =
+      //     (exportImagesId ? uNumber2Str(iter->first)
+      //                     : uFormat("%f", node.getStamp()));
+      //   if (models.size() > 1) {
+      //     modelName += "_" + uNumber2Str((int)i);
+      //   }
+      //   model.setName(modelName);
+      //   std::string dir = output_dir + "/" + base_name + "_calib";
+      //   if (!UDirectory::exists(dir)) {
+      //     UDirectory::makeDir(dir);
+      //   }
+      //   model.save(dir);
+      // }
+      // for (size_t i = 0; i < stereoModels.size(); ++i) {
+      //   rtabmap::StereoCameraModel model = stereoModels[i];
+      //   std::string modelName =
+      //     (exportImagesId ? uNumber2Str(iter->first)
+      //                     : uFormat("%f", node.getStamp()));
+      //   if (stereoModels.size() > 1) {
+      //     modelName += "_" + uNumber2Str((int)i);
+      //   }
+      //   model.setName(modelName, "left", "right");
+      //   std::string dir = output_dir + "/" + base_name + "_calib";
+      //   if (!UDirectory::exists(dir)) {
+      //     UDirectory::makeDir(dir);
+      //   }
+      //   // model.save(dir);
+      // }
+      // }
 
       float voxelSize = 0.0f;
       float filter_ceiling = std::numeric_limits<float>::max();
@@ -544,18 +576,264 @@ private:
           iter->second *
             node.sensorData().laserScanCompressed().localTransform()));
       }
-      printf("Create and assemble the clouds... done (%fs, %d points).\n",
-             timer.ticks(),
-             !assembledCloud->empty() ? (int)assembledCloud->size()
-                                      : (int)assembledCloudI->size());
+      RCLCPP_INFO(get_logger(),
+                  "Create and assemble the clouds... done (%fs, %d points).\n",
+                  timer.ticks(),
+                  !assembledCloud->empty() ? (int)assembledCloud->size()
+                                           : (int)assembledCloudI->size());
 
       if (imagesExported > 0)
-        printf("%d images exported!\n", imagesExported);
+        RCLCPP_INFO(get_logger(), "%d images exported!\n", imagesExported);
 
       rtabmap_cloud_ = assembledCloud;
     }
-    RCLCPP_INFO_STREAM(get_logger(),
-                       "Loaded " << rtabmap_cloud_->size() << " points");
+
+    pcl::PCLPointCloud2::Ptr cloud2(new pcl::PCLPointCloud2);
+    pcl::toPCLPointCloud2(*rtabmap_cloud_, *cloud2);
+
+    for (std::map<int, std::vector<rtabmap::CameraModel>>::iterator iter =
+           cameraModels.begin();
+         iter != cameraModels.end(); ++iter) {
+      cv::Mat frame =
+        cv::Mat::zeros(iter->second.front().imageHeight(),
+                       iter->second.front().imageWidth(), CV_8UC3);
+      cv::Mat depth(iter->second.front().imageHeight(),
+                    iter->second.front().imageWidth() * iter->second.size(),
+                    CV_32FC1);
+      for (size_t i = 0; i < iter->second.size(); ++i) {
+        cv::Mat subDepth = rtabmap::util3d::projectCloudToCamera(
+          iter->second.at(i).imageSize(), iter->second.at(i).K(), cloud2,
+          robotPoses.at(iter->first) * iter->second.at(i).localTransform());
+        subDepth.copyTo(
+          depth(cv::Range::all(),
+                cv::Range(i * iter->second.front().imageWidth(),
+                          (i + 1) * iter->second.front().imageWidth())));
+      }
+
+      for (int y = 0; y < depth.rows; ++y) {
+        for (int x = 0; x < depth.cols; ++x) {
+          if (depth.at<float>(y, x) > 0.0f) // Valid depth
+          {
+            cv::circle(frame, cv::Point(x, y), 3, cv::Scalar(0, 255, 0), -1);
+          }
+        }
+      }
+
+      cv::imshow("Overlay", frame);
+      cv::waitKey(40); // Press any key to continue
+
+      depth = rtabmap::util2d::cvtDepthFromFloat(depth);
+      // cv::imshow("depth", depth);
+      // cv::waitKey(50);
+      // std::string
+      // outputPath=dir+"/"+(exportImagesId?uNumber2Str(iter->first):uFormat("%f",cameraStamps.at(iter->first)))+".png";
+      // cv::imwrite(outputPath, depth);
+    }
+
+    pcl::PointCloud<pcl::PointXYZ>::Ptr cloudWithoutNormals(
+      new pcl::PointCloud<pcl::PointXYZ>);
+
+    pcl::PointCloud<pcl::PointXYZ>::Ptr rawAssembledCloud(
+      new pcl::PointCloud<pcl::PointXYZ>);
+
+    pcl::copyPointCloud(*rtabmap_cloud_, *cloudWithoutNormals);
+    rawAssembledCloud = cloudWithoutNormals;
+
+    pcl::PointCloud<pcl::Normal>::Ptr normals =
+      rtabmap::util3d::computeNormals(cloudWithoutNormals, 20, 0);
+
+    bool groundNormalsUp = true;
+    pcl::PointCloud<pcl::PointXYZRGBNormal>::Ptr cloudToExport(
+      new pcl::PointCloud<pcl::PointXYZRGBNormal>);
+    pcl::PointCloud<pcl::PointXYZINormal>::Ptr cloudIToExport(
+      new pcl::PointCloud<pcl::PointXYZINormal>);
+    if (!assembledCloud->empty()) {
+      UASSERT(assembledCloud->size() == normals->size());
+      pcl::concatenateFields(*assembledCloud, *normals, *cloudToExport);
+      RCLCPP_INFO(
+        get_logger(),
+        "Computing normals of the assembled cloud... done! (%fs, %d points)\n",
+        timer.ticks(), (int)assembledCloud->size());
+      assembledCloud->clear();
+
+      // adjust with point of views
+      RCLCPP_INFO(
+        get_logger(),
+        "Adjust normals to viewpoints of the assembled cloud... (%d points)\n",
+        (int)cloudToExport->size());
+      rtabmap::util3d::adjustNormalsToViewPoints(
+        rawViewpoints, rawAssembledCloud, rawViewpointIndices, cloudToExport,
+        groundNormalsUp);
+      RCLCPP_INFO(
+        get_logger(),
+        "Adjust normals to viewpoints of the assembled cloud... (%fs, %d "
+        "points)\n",
+        timer.ticks(), (int)cloudToExport->size());
+    } else if (!assembledCloudI->empty()) {
+      UASSERT(assembledCloudI->size() == normals->size());
+      pcl::concatenateFields(*assembledCloudI, *normals, *cloudIToExport);
+      RCLCPP_INFO(
+        get_logger(),
+        "Computing normals of the assembled cloud... done! (%fs, %d points)\n",
+        timer.ticks(), (int)assembledCloudI->size());
+      assembledCloudI->clear();
+
+      // adjust with point of views
+      RCLCPP_INFO(
+        get_logger(),
+        "Adjust normals to viewpoints of the assembled cloud... (%d points)\n",
+        (int)cloudIToExport->size());
+      rtabmap::util3d::adjustNormalsToViewPoints(
+        rawViewpoints, rawAssembledCloud, rawViewpointIndices, cloudIToExport,
+        groundNormalsUp);
+      RCLCPP_INFO(
+        get_logger(),
+        "Adjust normals to viewpoints of the assembled cloud... (%fs, %d "
+        "points)\n",
+        timer.ticks(), (int)cloudIToExport->size());
+    }
+
+    std::vector<std::pair<std::pair<int, int>, pcl::PointXY>> pointToPixel;
+    float textureRange = 0.0f;
+    float textureAngle = 0.0f;
+    std::vector<float> textureRoiRatios;
+    cv::Mat projMask;
+    bool distanceToCamPolicy = false;
+    const rtabmap::ProgressState progressState;
+    pointToPixel = rtabmap::util3d::projectCloudToCameras(
+      *cloudToExport, robotPoses, cameraModels, textureRange, textureAngle,
+      textureRoiRatios, projMask, distanceToCamPolicy, &progressState);
+
+    // color the cloud
+    std::vector<int> pointToCamId;
+    std::vector<float> pointToCamIntensity;
+    pointToCamId.resize(!cloudToExport->empty() ? cloudToExport->size()
+                                                : cloudIToExport->size());
+
+    UASSERT(pointToPixel.empty() || pointToPixel.size() == pointToCamId.size());
+    pcl::PointCloud<pcl::PointXYZRGBNormal>::Ptr assembledCloudValidPoints(
+      new pcl::PointCloud<pcl::PointXYZRGBNormal>());
+    assembledCloudValidPoints->resize(pointToCamId.size());
+
+    int imagesDone = 1;
+    for (std::map<int, rtabmap::Transform>::iterator iter = robotPoses.begin();
+         iter != robotPoses.end(); ++iter) {
+      int nodeID = iter->first;
+      cv::Mat image;
+      if (uContains(nodes, nodeID) &&
+          !nodes.at(nodeID).sensorData().imageCompressed().empty()) {
+        nodes.at(nodeID).sensorData().uncompressDataConst(&image, 0);
+      }
+      if (!image.empty()) {
+        UASSERT(cameraModels.find(nodeID) != cameraModels.end());
+        int modelsSize = cameraModels.at(nodeID).size();
+        for (size_t i = 0; i < pointToPixel.size(); ++i) {
+          int cameraIndex = pointToPixel[i].first.second;
+          if (nodeID == pointToPixel[i].first.first && cameraIndex >= 0) {
+            pcl::PointXYZRGBNormal pt;
+            float intensity = 0;
+            if (!cloudToExport->empty()) {
+              pt = cloudToExport->at(i);
+            } else if (!cloudIToExport->empty()) {
+              pt.x = cloudIToExport->at(i).x;
+              pt.y = cloudIToExport->at(i).y;
+              pt.z = cloudIToExport->at(i).z;
+              pt.normal_x = cloudIToExport->at(i).normal_x;
+              pt.normal_y = cloudIToExport->at(i).normal_y;
+              pt.normal_z = cloudIToExport->at(i).normal_z;
+              intensity = cloudIToExport->at(i).intensity;
+            }
+
+            int subImageWidth = image.cols / modelsSize;
+            cv::Mat subImage = image(
+              cv::Range::all(), cv::Range(cameraIndex * subImageWidth,
+                                          (cameraIndex + 1) * subImageWidth));
+
+            int x = pointToPixel[i].second.x * (float)subImage.cols;
+            int y = pointToPixel[i].second.y * (float)subImage.rows;
+            UASSERT(x >= 0 && x < subImage.cols);
+            UASSERT(y >= 0 && y < subImage.rows);
+
+            if (subImage.type() == CV_8UC3) {
+              cv::Vec3b bgr = subImage.at<cv::Vec3b>(y, x);
+              pt.b = bgr[0];
+              pt.g = bgr[1];
+              pt.r = bgr[2];
+            } else {
+              UASSERT(subImage.type() == CV_8UC1);
+              pt.r = pt.g = pt.b = subImage.at<unsigned char>(
+                pointToPixel[i].second.y * subImage.rows,
+                pointToPixel[i].second.x * subImage.cols);
+            }
+
+            int exportedId = nodeID;
+            pointToCamId[i] = exportedId;
+            if (!pointToCamIntensity.empty()) {
+              pointToCamIntensity[i] = intensity;
+            }
+            assembledCloudValidPoints->at(i) = pt;
+          }
+        }
+      }
+      RCLCPP_INFO(get_logger(), "Processed %d/%d images", imagesDone++,
+                  (int)robotPoses.size());
+    }
+
+    pcl::IndicesPtr validIndices(new std::vector<int>(pointToPixel.size()));
+    size_t oi = 0;
+    for (size_t i = 0; i < pointToPixel.size(); ++i) {
+      if (pointToPixel[i].first.first <= 0) {
+        pcl::PointXYZRGBNormal pt;
+        float intensity = 0;
+        if (!cloudToExport->empty()) {
+          pt = cloudToExport->at(i);
+        } else if (!cloudIToExport->empty()) {
+          pt.x = cloudIToExport->at(i).x;
+          pt.y = cloudIToExport->at(i).y;
+          pt.z = cloudIToExport->at(i).z;
+          pt.normal_x = cloudIToExport->at(i).normal_x;
+          pt.normal_y = cloudIToExport->at(i).normal_y;
+          pt.normal_z = cloudIToExport->at(i).normal_z;
+          intensity = cloudIToExport->at(i).intensity;
+        }
+
+        pointToCamId[i] = 0; // invalid
+        pt.b = 0;
+        pt.g = 0;
+        pt.r = 255;
+        if (!pointToCamIntensity.empty()) {
+          pointToCamIntensity[i] = intensity;
+        }
+        assembledCloudValidPoints->at(i) = pt; // red
+        validIndices->at(oi++) = i;
+      } else {
+        validIndices->at(oi++) = i;
+      }
+    }
+
+    if (oi != validIndices->size()) {
+      validIndices->resize(oi);
+      assembledCloudValidPoints = rtabmap::util3d::extractIndices(
+        assembledCloudValidPoints, validIndices, false, false);
+      std::vector<int> pointToCamIdTmp(validIndices->size());
+      std::vector<float> pointToCamIntensityTmp(validIndices->size());
+      for (size_t i = 0; i < validIndices->size(); ++i) {
+        pointToCamIdTmp[i] = pointToCamId[validIndices->at(i)];
+        pointToCamIntensityTmp[i] = pointToCamIntensity[validIndices->at(i)];
+      }
+      pointToCamId = pointToCamIdTmp;
+      pointToCamIntensity = pointToCamIntensityTmp;
+      pointToCamIdTmp.clear();
+      pointToCamIntensityTmp.clear();
+    }
+
+    cloudToExport = assembledCloudValidPoints;
+    cloudIToExport->clear();
+
+    pcl::copyPointCloud(*cloudToExport, *rtabmap_cloud_);
+
+    RCLCPP_INFO(get_logger(), "Camera projection... done! (%fs)\n",
+                timer.ticks());
 
     rtabmap_occupancy_grid_ = point_cloud_to_occupancy_grid(rtabmap_cloud_);
     rtabmap_occupancy_grid_->header.frame_id = "map";
