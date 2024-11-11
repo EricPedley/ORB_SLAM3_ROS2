@@ -42,6 +42,11 @@ def generate_launch_description():
                 ],
             ),
             Node(
+                package="orb_slam3_ros2",
+                executable="semantic_mapping.py",
+                output="screen",
+            ),
+            Node(
                 package="tf2_ros",
                 executable="static_transform_publisher",
                 output="screen",

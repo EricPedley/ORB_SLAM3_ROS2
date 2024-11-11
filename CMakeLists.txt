@@ -10,7 +10,7 @@ if(NOT CMAKE_BUILD_TYPE)        # If no build type is set, set one
 endif()
 
 if(NOT CMAKE_CXX_STANDARD)
-    set(CMAKE_CXX_STANDARD 11)
+    set(CMAKE_CXX_STANDARD 14)
 endif()
 
 if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
@@ -28,7 +28,9 @@ message(WARNING "CMAKE_PREFIX_PATH: ${CMAKE_PREFIX_PATH}")
 
 # find dependencies
 find_package(ament_cmake REQUIRED)
+find_package(ament_cmake_python REQUIRED)
 find_package(rclcpp REQUIRED)
+find_package(rclpy REQUIRED)
 find_package(std_msgs REQUIRED)
 find_package(std_srvs REQUIRED)
 find_package(sensor_msgs REQUIRED)
@@ -200,15 +202,17 @@ install(
   DESTINATION share/${PROJECT_NAME}/videos
 )
 
-# # install EuRoC dataset
-# install(
-#   DIRECTORY TEST_DATASET/
-#   DESTINATION share/${PROJECT_NAME}/TEST_DATASET)
-
 # install launch files
 install(
   DIRECTORY launch/
   DESTINATION share/${PROJECT_NAME}/launch
+)
+
+ament_python_install_package(${PROJECT_NAME})
+
+install(PROGRAMS
+    scripts/semantic_mapping.py
+    DESTINATION lib/${PROJECT_NAME}
 )
 
 if(BUILD_TESTING)
@@ -222,5 +226,6 @@ if(BUILD_TESTING)
   set(ament_cmake_cpplint_FOUND TRUE)
   ament_lint_auto_find_test_dependencies()
 endif()
+
 
 ament_package()

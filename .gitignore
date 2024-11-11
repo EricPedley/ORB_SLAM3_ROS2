@@ -11,3 +11,4 @@ videos/
 .cache
 *.pcd
 occupancy_grids/
+images/
