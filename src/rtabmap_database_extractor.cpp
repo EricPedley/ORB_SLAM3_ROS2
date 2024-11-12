@@ -4,6 +4,8 @@
 #include <nav2_map_server/map_io.hpp>
 #include <pcl/cloud_iterator.h>
 #include <pcl/common/centroid.h>
+#include <pcl/filters/radius_outlier_removal.h>
+#include <pcl/filters/statistical_outlier_removal.h>
 #include <rtabmap/core/ProgressState.h>
 #include <string>
 
@@ -86,6 +88,33 @@ public:
   }
 
 private:
+  pcl::PointCloud<pcl::PointXYZRGB>::Ptr
+  filter_point_cloud(pcl::PointCloud<pcl::PointXYZRGB>::Ptr cloud)
+  {
+    // statistical outlier removal
+    pcl::PointCloud<pcl::PointXYZRGB>::Ptr sor_cloud(
+      new pcl::PointCloud<pcl::PointXYZRGB>);
+    pcl::StatisticalOutlierRemoval<pcl::PointXYZRGB> sor;
+    sor.setInputCloud(cloud);
+    sor.setMeanK(100); // increase for more permissive, decrease for less
+    sor.setStddevMulThresh(
+      1.0); // increase for more permissive, decrease for less
+    sor.filter(*sor_cloud);
+
+    // radius outlier removal
+    pcl::PointCloud<pcl::PointXYZRGB>::Ptr radius_cloud(
+      new pcl::PointCloud<pcl::PointXYZRGB>);
+    pcl::RadiusOutlierRemoval<pcl::PointXYZRGB> radius_outlier;
+    radius_outlier.setInputCloud(sor_cloud);
+    radius_outlier.setRadiusSearch(
+      0.5); // Adjust based on spacing in the point cloud
+    radius_outlier.setMinNeighborsInRadius(
+      3); // Increase for more aggressive outlier removal
+    radius_outlier.filter(*radius_cloud);
+    radius_cloud->width = radius_cloud->points.size();
+
+    return radius_cloud;
+  }
   nav_msgs::msg::OccupancyGrid::SharedPtr
   point_cloud_to_occupancy_grid(pcl::PointCloud<pcl::PointXYZRGB>::Ptr cloud)
   {
@@ -166,19 +195,13 @@ private:
       RCLCPP_INFO(get_logger(), "No more images to publish");
     }
 
-    if (!clouds_.empty()) {
-      RCLCPP_INFO_STREAM(get_logger(), "clouds size: " << clouds_.size());
-      pcl::PCLPointCloud2 pcl_pc2;
-      pcl::toPCLPointCloud2(*clouds_.front(), pcl_pc2);
-      sensor_msgs::msg::PointCloud2 msg;
-      pcl_conversions::fromPCL(pcl_pc2, msg);
-      msg.header.frame_id = "map";
-      msg.header.stamp = get_clock()->now();
-      point_cloud_publisher_->publish(msg);
-      clouds_.erase(clouds_.begin());
-    } else {
-      RCLCPP_INFO(get_logger(), "No more clouds to publish");
-    }
+    pcl::PCLPointCloud2 pcl_pc2;
+    pcl::toPCLPointCloud2(*rtabmap_cloud_, pcl_pc2);
+    sensor_msgs::msg::PointCloud2 msg;
+    pcl_conversions::fromPCL(pcl_pc2, msg);
+    msg.header.frame_id = "map";
+    msg.header.stamp = get_clock()->now();
+    point_cloud_publisher_->publish(msg);
   }
   std::string generate_timestamp_string()
   {
@@ -835,6 +858,7 @@ private:
     RCLCPP_INFO(get_logger(), "Camera projection... done! (%fs)\n",
                 timer.ticks());
 
+    rtabmap_cloud_ = filter_point_cloud(rtabmap_cloud_);
     rtabmap_occupancy_grid_ = point_cloud_to_occupancy_grid(rtabmap_cloud_);
     rtabmap_occupancy_grid_->header.frame_id = "map";
 
