@@ -24,6 +24,11 @@
 #include <rtabmap/utilite/UStl.h>
 #include <rtabmap/utilite/UTimer.h>
 
+#include <opencv2/dnn.hpp>
+#include <opencv2/imgproc.hpp>
+#include <opencv2/imgcodecs.hpp>
+#include <opencv2/highgui.hpp>
+
 #include <cv_bridge/cv_bridge.h>
 
 #include <nav_msgs/msg/occupancy_grid.hpp>
@@ -51,9 +56,9 @@ public:
     rtabmap_cloud_ = pcl::PointCloud<pcl::PointXYZRGB>::Ptr(
       new pcl::PointCloud<pcl::PointXYZRGB>);
 
-    // model_path_ = std::string(PROJECT_PATH) + "/models/" + "yolov5n.onnx";
-    // RCLCPP_INFO_STREAM(get_logger(), "Loading model: " << model_path_);
-    // net_ = cv::dnn::readNetFromONNX(model_path_);
+    model_path_ = std::string(PROJECT_PATH) + "/models/" + "yolox_s.onnx";
+    RCLCPP_INFO_STREAM(get_logger(), "Loading model: " << model_path_);
+    net_ = cv::dnn::readNet(model_path_);
 
     if (!load_rtabmap_db(rtabmap_database_path_)) {
       RCLCPP_ERROR(get_logger(), "Failed to load database");
@@ -343,80 +348,80 @@ private:
         // cv::waitKey(50);
       }
 
-      // if(!rgb.empty()) {
-      //   int center_x = rgb.cols / 2;
-      //   int center_y = rgb.rows / 2;
-      //
-      //   int crop_width = 640;
-      //   int crop_height = 640;
-      //
-      //   cv::Mat crop =
-      //     rgb(cv::Rect(center_x - crop_width / 2, center_y - crop_height / 2,
-      //                  crop_width, crop_height));
-      //
-      //   cv::Mat resized_image;
-      //   cv::resize(crop, resized_image, cv::Size(640, 640));
-      //
-      //   RCLCPP_INFO_STREAM(get_logger(), "resized_image width: "
-      //                                      << resized_image.cols
-      //                                      << " height: " <<
-      //                                      resized_image.rows);
-      //   RCLCPP_INFO_STREAM(get_logger(), "resized_image channels: "
-      //                                      << resized_image.channels());
-      //   RCLCPP_INFO_STREAM(get_logger(), "resized_image type: "
-      //                                      << resized_image.type());
-      //
-      //   cv::Mat blob =
-      //     cv::dnn::blobFromImage(resized_image, 1 / 255.0, cv::Size(640,
-      //     640),
-      //                            cv::Scalar(0, 0, 0), true, false);
-      //   if(blob.empty()) {
-      //     RCLCPP_ERROR(get_logger(), "Failed to create blob");
-      //     return false;
-      //   }
-      //   net_.setInput(blob);
-      //   std::vector<cv::Mat> detections;
-      //   net_.forward(detections);
-      //
-      //   RCLCPP_INFO_STREAM(get_logger(),
-      //                      "detections size: " << detections.size());
-      //
-      //   float confidence_threshold = 0.5;
-      //   for (size_t i = 0; i < detections.size(); ++i) {
-      //     float *data = (float *)detections[i].data;
-      //
-      //     // Loop through each detection
-      //     for (int j = 0; j < detections[i].rows;
-      //          ++j, data += detections[i].cols) {
-      //       float confidence = data[4]; // Confidence score of the detection
-      //       RCLCPP_INFO_STREAM(get_logger(), "confidence: " << confidence);
-      //       RCLCPP_INFO_STREAM(get_logger(),
-      //                          "confidence_threshold: " <<
-      //                          confidence_threshold);
-      //       if (confidence > confidence_threshold) {
-      //         int left = (int)(data[0] * resized_image.cols);   // x1
-      //         int top = (int)(data[1] * resized_image.rows);    // y1
-      //         int right = (int)(data[2] * resized_image.cols);  // x2
-      //         int bottom = (int)(data[3] * resized_image.rows); // y2
-      //
-      //         // Draw bounding box
-      //         cv::rectangle(resized_image, cv::Point(left, top),
-      //                       cv::Point(right, bottom), cv::Scalar(0, 255, 0),
-      //                       2);
-      //
-      //         // Display confidence text
-      //         std::string label = cv::format("%.2f", confidence);
-      //         cv::putText(resized_image, label, cv::Point(left, top - 10),
-      //                     cv::FONT_HERSHEY_SIMPLEX, 0.5,
-      //                     cv::Scalar(255, 255, 255), 2);
-      //       }
-      //     }
-      //   }
-      //
-      //   // Display the output image with bounding boxes
-      //   cv::imshow("Detection", resized_image);
-      //   cv::waitKey(50);
-      // }
+      if(!rgb.empty()) {
+        int center_x = rgb.cols / 2;
+        int center_y = rgb.rows / 2;
+
+        int crop_width = 640;
+        int crop_height = 640;
+
+        cv::Mat crop =
+          rgb(cv::Rect(center_x - crop_width / 2, center_y - crop_height / 2,
+                       crop_width, crop_height));
+
+        cv::Mat resized_image;
+        cv::resize(crop, resized_image, cv::Size(640, 640));
+
+        RCLCPP_INFO_STREAM(get_logger(), "resized_image width: "
+                                           << resized_image.cols
+                                           << " height: " <<
+                                           resized_image.rows);
+        RCLCPP_INFO_STREAM(get_logger(), "resized_image channels: "
+                                           << resized_image.channels());
+        RCLCPP_INFO_STREAM(get_logger(), "resized_image type: "
+                                           << resized_image.type());
+
+        cv::Mat blob =
+          cv::dnn::blobFromImage(resized_image, 1 / 255.0, cv::Size(640,
+          640),
+                                 cv::Scalar(0, 0, 0), true, false);
+        if(blob.empty()) {
+          RCLCPP_ERROR(get_logger(), "Failed to create blob");
+          return false;
+        }
+        net_.setInput(blob);
+        std::vector<cv::Mat> detections;
+        net_.forward(detections);
+
+        RCLCPP_INFO_STREAM(get_logger(),
+                           "detections size: " << detections.size());
+
+        float confidence_threshold = 0.5;
+        for (size_t i = 0; i < detections.size(); ++i) {
+          float *data = (float *)detections[i].data;
+
+          // Loop through each detection
+          for (int j = 0; j < detections[i].rows;
+               ++j, data += detections[i].cols) {
+            float confidence = data[4]; // Confidence score of the detection
+            RCLCPP_INFO_STREAM(get_logger(), "confidence: " << confidence);
+            RCLCPP_INFO_STREAM(get_logger(),
+                               "confidence_threshold: " <<
+                               confidence_threshold);
+            if (confidence > confidence_threshold) {
+              int left = (int)(data[0] * resized_image.cols);   // x1
+              int top = (int)(data[1] * resized_image.rows);    // y1
+              int right = (int)(data[2] * resized_image.cols);  // x2
+              int bottom = (int)(data[3] * resized_image.rows); // y2
+
+              // Draw bounding box
+              cv::rectangle(resized_image, cv::Point(left, top),
+                            cv::Point(right, bottom), cv::Scalar(0, 255, 0),
+                            2);
+
+              // Display confidence text
+              std::string label = cv::format("%.2f", confidence);
+              cv::putText(resized_image, label, cv::Point(left, top - 10),
+                          cv::FONT_HERSHEY_SIMPLEX, 0.5,
+                          cv::Scalar(255, 255, 255), 2);
+            }
+          }
+        }
+
+        // Display the output image with bounding boxes
+        cv::imshow("Detection", resized_image);
+        cv::waitKey(50);
+      }
 
       // saving images stuff
       // if (!rgb.empty()) {
@@ -643,7 +648,7 @@ private:
       }
 
       cv::imshow("Overlay", frame);
-      cv::waitKey(40); // Press any key to continue
+      cv::waitKey(50); // Press any key to continue
 
       depth = rtabmap::util2d::cvtDepthFromFloat(depth);
       // cv::imshow("depth", depth);
