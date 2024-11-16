@@ -47,9 +47,6 @@
 // this is orb_slam3
 #include "System.h"
 
-#include "pointmatcher/PointMatcher.h"
-#include "pointmatcher_ros/PointMatcher_ROS.h"
-
 #include <rclcpp/rclcpp.hpp>
 
 using namespace std::chrono_literals;

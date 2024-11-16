@@ -24,8 +24,6 @@ add_definitions(${PCL_DEFINITIONS})
 set(USER_HOME $ENV{HOME})
 # set(CMAKE_PREFIX_PATH "${USER_HOME}/.local/include/libpointmatcher/share/libpointmatcher/cmake;${CMAKE_PREFIX_PATH}")
 
-message(WARNING "CMAKE_PREFIX_PATH: ${CMAKE_PREFIX_PATH}")
-
 # find dependencies
 find_package(ament_cmake REQUIRED)
 find_package(ament_cmake_python REQUIRED)
@@ -36,33 +34,21 @@ find_package(std_srvs REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(tf2 REQUIRED)
 find_package(tf2_ros REQUIRED)
-find_package(octomap_server REQUIRED)
 find_package(nav_msgs REQUIRED)
-find_package(apriltag REQUIRED)
-find_package(apriltag_ros REQUIRED)
-find_package(apriltag_msgs REQUIRED)
 find_package(cv_bridge REQUIRED)
 find_package(realsense2_description REQUIRED)
 find_package(xacro REQUIRED)
-# find_package(Eigen3 3.3 REQUIRED) # Matched with Sophus
 find_package(Sophus REQUIRED)
 find_package(Pangolin REQUIRED)
-find_package(image_transport REQUIRED)
+find_package(pcl_ros REQUIRED)
+find_package(pcl_conversions REQUIRED)
 find_package(PCL 1.12 REQUIRED)
-# find_package(pcl_ros REQUIRED)
-# find_package(pcl_conversions REQUIRED)
 
-find_package(ORB_SLAM3 REQUIRED)
-find_package(libpointmatcher REQUIRED)
-find_package(libpointmatcher_ros REQUIRED)
 find_package(RTABMap REQUIRED)
-# find_package(rtabmap_ros REQUIRED)
 find_package(imu_filter_madgwick REQUIRED)
 find_package(yaml-cpp REQUIRED)
 find_package(nav2_map_server REQUIRED)
-
-message("RTABMap_INCLUDE_DIRS: ${RTABMap_INCLUDE_DIRS}")
-message("RTABMap_LIBRARIES: ${RTABMap_LIBRARIES}")
+find_package(ORB_SLAM3 REQUIRED)
 
 if(ORB_SLAM3_LIBRARY)
     message("Found ORB_SLAM3: ${ORB_SLAM3_LIBRARY}")
@@ -73,40 +59,25 @@ endif()
 set(THIS_PACKAGE_INCLUDE_DEPENDS
   rclcpp
   std_msgs
+  std_srvs
   sensor_msgs
   tf2
   tf2_ros
-  octomap_server
   nav_msgs
-  apriltag
-  apriltag_ros
-  apriltag_msgs
   cv_bridge
-  Pangolin
-  image_transport
+  realsense2_description
+  xacro
   pcl_ros
   pcl_conversions
-  nav2_map_server
+  Pangolin
+  # imu_filter_madgwick
   yaml-cpp
-  # rtabmap_ros
-  libpointmatcher
-  libpointmatcher_ros
+  nav2_map_server
   ORB_SLAM3
 )
 
-# if(Eigen3_FOUND)
-#     message(STATUS "Found Eigen3: ${Eigen3_INCLUDE_DIRS}")
-#     message(STATUS "Eigen3 version: ${Eigen3_VERSION}")
-# else()
-#     message(FATAL_ERROR "Could not find Eigen3")
-# endif()
-
 add_executable(imu_mono_node_cpp
   src/imu_mono_realsense.cpp
-)
-
-add_executable(rtabmap_database_extractor_node
-  src/rtabmap_database_extractor.cpp
 )
 
 add_executable(orb_camera_info_node
@@ -117,10 +88,6 @@ ament_target_dependencies(imu_mono_node_cpp
   PUBLIC ${THIS_PACKAGE_INCLUDE_DEPENDS}
 )
 
-ament_target_dependencies(rtabmap_database_extractor_node
-  PUBLIC ${THIS_PACKAGE_INCLUDE_DEPENDS}
-)
-
 ament_target_dependencies(orb_camera_info_node
   PUBLIC ${THIS_PACKAGE_INCLUDE_DEPENDS}
 )
@@ -128,17 +95,10 @@ ament_target_dependencies(orb_camera_info_node
 set(ORB_SLAM3_ROOT_DIR ${CMAKE_CURRENT_SOURCE_DIR}/ORB_SLAM3)
 
 include_directories(
-    include
     ${ORB_SLAM3_ROOT_DIR}/include
     ${ORB_SLAM3_ROOT_DIR}/include/CameraModels
     ${ORB_SLAM3_ROOT_DIR}/Thirdparty/Sophus
     ${PCL_INCLUDE_DIRS}
-    ${libpointmatcher_INCLUDE_DIRS}
-    ${libpointmatcher_ros_INCLUDE_DIRS}
-)
-
-link_directories(
-    include
 )
 
 target_include_directories(imu_mono_node_cpp PUBLIC
@@ -147,15 +107,10 @@ target_include_directories(imu_mono_node_cpp PUBLIC
 
 target_link_libraries(imu_mono_node_cpp PUBLIC ${ORB_SLAM3_LIBRARY} ${PCL_LIBRARIES}
     ${libpointmatcher_LIBRARIES} ${libpointmatcher_ros_LIBRARIES} rtabmap::rtabmap)
-target_link_libraries(rtabmap_database_extractor_node PUBLIC ${PCL_LIBRARIES} rtabmap::rtabmap)
 target_link_libraries(orb_camera_info_node PUBLIC yaml-cpp)
 
-install(TARGETS rtabmap_database_extractor_node imu_mono_node_cpp orb_camera_info_node
+install(TARGETS imu_mono_node_cpp orb_camera_info_node
     DESTINATION lib/${PROJECT_NAME}
-)
-
-install (DIRECTORY include/
-        DESTINATION include
 )
 
 install(DIRECTORY ${ORB_SLAM3_INCLUDE_DIR}
@@ -194,12 +149,6 @@ install(
 install(
     DIRECTORY occupancy_grids/
     DESTINATION share/${PROJECT_NAME}/orb_maps
-)
-
-# install video files
-install(
-  DIRECTORY videos/
-  DESTINATION share/${PROJECT_NAME}/videos
 )
 
 # install launch files
