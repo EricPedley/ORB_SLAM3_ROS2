@@ -1,18 +1,8 @@
-#include <chrono>
-#include <functional>
-#include <memory>
-#include <rclcpp/subscription.hpp>
-#include <string>
 #include <yaml-cpp/yaml.h>
-
 #include "sensor_msgs/msg/camera_info.hpp"
-
 #include "rclcpp/rclcpp.hpp"
 
 using namespace std::chrono_literals;
-
-/* This example creates a subclass of Node and uses std::bind() to register a
- * member function as a callback from the timer. */
 
 class OrbCameraInfo : public rclcpp::Node {
 public:
