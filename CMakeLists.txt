@@ -84,11 +84,19 @@ add_executable(orb_camera_info_node
   src/orb_camera_info.cpp
 )
 
+add_executable(visualize_node
+  src/visualize.cpp
+)
+
 ament_target_dependencies(imu_mono_node_cpp
   PUBLIC ${THIS_PACKAGE_INCLUDE_DEPENDS}
 )
 
 ament_target_dependencies(orb_camera_info_node
+  PUBLIC ${THIS_PACKAGE_INCLUDE_DEPENDS}
+)
+
+ament_target_dependencies(visualize_node
   PUBLIC ${THIS_PACKAGE_INCLUDE_DEPENDS}
 )
 
@@ -108,6 +116,7 @@ target_include_directories(imu_mono_node_cpp PUBLIC
 target_link_libraries(imu_mono_node_cpp PUBLIC ${ORB_SLAM3_LIBRARY} ${PCL_LIBRARIES}
     ${libpointmatcher_LIBRARIES} ${libpointmatcher_ros_LIBRARIES} rtabmap::rtabmap)
 target_link_libraries(orb_camera_info_node PUBLIC yaml-cpp)
+target_link_libraries(orb_camera_info_node PUBLIC ${PCL_LIBRARIES})
 
 install(TARGETS imu_mono_node_cpp orb_camera_info_node
     DESTINATION lib/${PROJECT_NAME}
