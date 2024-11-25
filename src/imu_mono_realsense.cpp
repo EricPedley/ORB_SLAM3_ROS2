@@ -13,14 +13,6 @@
 #include <pcl_conversions/pcl_conversions.h>
 #include <pcl_ros/transforms.hpp>
 
-#include <rtabmap/core/DBDriver.h>
-#include <rtabmap/core/Graph.h>
-#include <rtabmap/core/Rtabmap.h>
-#include <rtabmap/core/Signature.h>
-#include <rtabmap/core/util3d.h>
-#include <rtabmap/core/util3d_filtering.h>
-#include <rtabmap/utilite/UTimer.h>
-
 #include <geometry_msgs/msg/pose_array.hpp>
 #include <geometry_msgs/msg/quaternion.hpp>
 #include <geometry_msgs/msg/vector3.hpp>
@@ -64,14 +56,10 @@ public:
     // declare parameters
     declare_parameter("sensor_type", "imu-monocular");
     declare_parameter("use_pangolin", true);
-    declare_parameter("rtabmap_db", "");
 
     // get parameters
     sensor_type_param = get_parameter("sensor_type").as_string();
     use_pangolin = get_parameter("use_pangolin").as_bool();
-    rtabmap_db_ = get_parameter("rtabmap_db").as_string();
-    std::string rtabmap_db_path =
-      std::string(PROJECT_PATH) + "/maps/" + rtabmap_db_;
 
     // define callback groups
     image_callback_group_ =
@@ -137,11 +125,6 @@ public:
     imu_sub = create_subscription<sensor_msgs::msg::Imu>(
       "camera/camera/imu", imu_qos,
       std::bind(&ImuMonoRealSense::imu_callback, this, _1), imu_options);
-
-    // create service clients
-    rtabmap_reset_service_ = create_client<std_srvs::srv::Empty>(
-      "rtabmap/reset", rmw_qos_profile_services_default,
-      slam_service_callback_group_);
 
     // tf broadcaster
     tf_broadcaster = std::make_unique<tf2_ros::TransformBroadcaster>(*this);
@@ -509,22 +492,16 @@ private:
       live_point_cloud_publisher_->publish(live_pcl_cloud_msg_);
     } else {
       // RCLCPP_INFO_STREAM(get_logger(), "IMU not initialized");
-      rtabmap_reset_service_->async_send_request(
-        std::make_shared<std_srvs::srv::Empty::Request>());
       initialize_variables();
     }
     if (!inertial_ba1_ && orb_slam3_system_->GetInertialBA1()) {
       inertial_ba1_ = true;
-      rtabmap_reset_service_->async_send_request(
-        std::make_shared<std_srvs::srv::Empty::Request>());
       initialize_variables();
       RCLCPP_INFO(get_logger(), "Inertial BA1 complete");
     }
 
     if (!inertial_ba2_ && orb_slam3_system_->GetInertialBA2()) {
       inertial_ba2_ = true;
-      rtabmap_reset_service_->async_send_request(
-        std::make_shared<std_srvs::srv::Empty::Request>());
       initialize_variables();
       RCLCPP_INFO(get_logger(), "Inertial BA2 complete");
     }
@@ -541,15 +518,12 @@ private:
   rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr odom_publisher_;
   rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr orb_image_publisher_;
   rclcpp::Publisher<sensor_msgs::msg::Imu>::SharedPtr imu_publisher_;
-  rclcpp::Publisher<sensor_msgs::msg::Imu>::SharedPtr rtabmap_publisher_;
-  rclcpp::Client<std_srvs::srv::Empty>::SharedPtr rtabmap_reset_service_;
   rclcpp::TimerBase::SharedPtr timer;
 
   rclcpp::CallbackGroup::SharedPtr image_callback_group_;
   rclcpp::CallbackGroup::SharedPtr imu_callback_group_;
   rclcpp::CallbackGroup::SharedPtr slam_service_callback_group_;
   rclcpp::CallbackGroup::SharedPtr timer_callback_group_;
-  rclcpp::CallbackGroup::SharedPtr rtabmap_reset_callback_group_;
 
   std::unique_ptr<tf2_ros::TransformBroadcaster> tf_broadcaster;
 
@@ -558,7 +532,6 @@ private:
 
   std::string sensor_type_param;
   bool use_pangolin;
-  std::string rtabmap_db_;
 
   std::vector<geometry_msgs::msg::Vector3> vGyro;
   std::vector<double> vGyro_times;

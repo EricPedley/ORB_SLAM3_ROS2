@@ -118,7 +118,7 @@ target_link_libraries(imu_mono_node_cpp PUBLIC ${ORB_SLAM3_LIBRARY} ${PCL_LIBRAR
 target_link_libraries(orb_camera_info_node PUBLIC yaml-cpp)
 target_link_libraries(orb_camera_info_node PUBLIC ${PCL_LIBRARIES})
 
-install(TARGETS imu_mono_node_cpp orb_camera_info_node
+install(TARGETS imu_mono_node_cpp orb_camera_info_node visualize_node
     DESTINATION lib/${PROJECT_NAME}
 )
 
@@ -151,26 +151,24 @@ install(
 )
 
 install(
-  DIRECTORY maps/
-  DESTINATION share/${PROJECT_NAME}/maps
+  DIRECTORY clouds/
+  DESTINATION share/${PROJECT_NAME}/clouds
+)
+
+install(
+  DIRECTORY objects/
+  DESTINATION share/${PROJECT_NAME}/objects
 )
 
 install(
     DIRECTORY occupancy_grids/
-    DESTINATION share/${PROJECT_NAME}/orb_maps
+    DESTINATION share/${PROJECT_NAME}/occupancy_grids
 )
 
 # install launch files
 install(
   DIRECTORY launch/
   DESTINATION share/${PROJECT_NAME}/launch
-)
-
-ament_python_install_package(${PROJECT_NAME})
-
-install(PROGRAMS
-    scripts/semantic_mapping.py
-    DESTINATION lib/${PROJECT_NAME}
 )
 
 if(BUILD_TESTING)

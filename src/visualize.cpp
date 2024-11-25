@@ -27,6 +27,16 @@ public:
     }
 
     combine_clouds();
+
+    // define publishers
+    full_cloud_publisher_ =
+      create_publisher<sensor_msgs::msg::PointCloud2>("full_cloud", 10);
+    object_cloud_publisher_ =
+      create_publisher<sensor_msgs::msg::PointCloud2>("object_clouds", 10);
+
+    // define timer
+    timer_ =
+      create_wall_timer(1000ms, std::bind(&Visualize::timer_callback, this));
   }
 
 private:
@@ -35,11 +45,13 @@ private:
     std::string object_path =
       std::string(PROJECT_PATH) + "/objects/" + objects_path_;
     std::string cloud_path =
-      std::string(PROJECT_PATH) + "/clouds/" + cloud_path_;
+      std::string(PROJECT_PATH) + "/clouds/" + cloud_path_ + ".pcd";
     if (!std::filesystem::is_directory(object_path)) {
       RCLCPP_ERROR_STREAM(get_logger(),
-                          "Directory " << object_path << "does not exist"); return false;
+                          "Directory " << object_path << " does not exist");
+      return false;
     } else {
+      int objects = 0;
       for (const auto &file :
            std::filesystem::directory_iterator(object_path)) {
         if (file.is_regular_file() && file.path().extension() == ".pcd") {
@@ -52,18 +64,16 @@ private:
             clouds_.push_back(cloud);
           }
         }
+        objects++;
       }
+      RCLCPP_INFO_STREAM(get_logger(), "Loaded " << objects << " objects");
     }
-    if (!std::filesystem::is_directory(cloud_path)) {
-      RCLCPP_ERROR_STREAM(get_logger(),
-                          "Directory " << cloud_path << "does not exist");
+    if (pcl::io::loadPCDFile(cloud_path, full_cloud_) == -1) {
+      RCLCPP_ERROR_STREAM(get_logger(), "Error loading file " << cloud_path);
       return false;
-    } else {
-      if (pcl::io::loadPCDFile(cloud_path, full_cloud_) == -1) {
-        RCLCPP_ERROR_STREAM(get_logger(), "Error loading file " << cloud_path);
-        return false;
-      }
     }
+    RCLCPP_INFO_STREAM(get_logger(), "Loaded full cloud with "
+                                       << full_cloud_.size() << " points");
     return true;
   }
 
@@ -73,26 +83,26 @@ private:
       combined_cloud_ += *cloud;
     }
   }
-  rclcpp::TimerBase::SharedPtr timer_;
-  rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr
-    point_cloud_publisher_;
-
   void timer_callback()
   {
-    sensor_msgs::msg::PointCloud2 cloud_msg;
-    pcl::toROSMsg(combined_cloud_, cloud_msg);
-    cloud_msg.header.frame_id = "world";
-    cloud_msg.header.stamp = get_clock()->now();
-    point_cloud_publisher_->publish(cloud_msg);
+    sensor_msgs::msg::PointCloud2 full_cloud_msg;
+    pcl::toROSMsg(combined_cloud_, full_cloud_msg);
+    full_cloud_msg.header.frame_id = "map";
+    full_cloud_msg.header.stamp = get_clock()->now();
+    full_cloud_publisher_->publish(full_cloud_msg);
 
-    for (const auto &cloud : clouds_) {
-      sensor_msgs::msg::PointCloud2 cloud_msg;
-      pcl::toROSMsg(*cloud, cloud_msg);
-      cloud_msg.header.frame_id = "world";
-      cloud_msg.header.stamp = get_clock()->now();
-      point_cloud_publisher_->publish(cloud_msg);
-    }
+    sensor_msgs::msg::PointCloud2 object_cloud_msg;
+    pcl::toROSMsg(combined_cloud_, object_cloud_msg);
+    object_cloud_msg.header.frame_id = "map";
+    object_cloud_msg.header.stamp = get_clock()->now();
+    object_cloud_publisher_->publish(object_cloud_msg);
   }
+
+  rclcpp::TimerBase::SharedPtr timer_;
+  rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr
+    full_cloud_publisher_;
+  rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr
+    object_cloud_publisher_;
 
   std::vector<pcl::PointCloud<pcl::PointXYZRGB>::Ptr> clouds_;
   pcl::PointCloud<pcl::PointXYZRGB> combined_cloud_;
