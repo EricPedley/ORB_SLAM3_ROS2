@@ -13,14 +13,9 @@ def generate_launch_description():
     return LaunchDescription(
         [
             DeclareLaunchArgument(
-                "objects_path",
+                "database_output_name",
                 default_value="",
-                description="Path to the objects file.",
-            ),
-            DeclareLaunchArgument(
-                "cloud_path",
-                default_value="",
-                description="Path to the PCL cloud file.",
+                description="Name of the database output file.",
             ),
             Node(
                 package="orb_slam3_ros2",
@@ -29,8 +24,9 @@ def generate_launch_description():
                 # prefix="xterm -e gdb --args",
                 parameters=[
                     {
-                        "objects_path": LaunchConfiguration("objects_path"),
-                        "cloud_path": LaunchConfiguration("cloud_path"),
+                        "database_output_name": LaunchConfiguration(
+                            "database_output_name"
+                        ),
                     }
                 ],
             ),

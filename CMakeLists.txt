@@ -156,8 +156,8 @@ install(
 )
 
 install(
-  DIRECTORY objects/
-  DESTINATION share/${PROJECT_NAME}/objects
+  DIRECTORY database_outputs/
+  DESTINATION share/${PROJECT_NAME}/database_outputs
 )
 
 install(
