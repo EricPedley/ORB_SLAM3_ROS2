@@ -98,11 +98,11 @@ private:
   }
   void timer_callback()
   {
-    // sensor_msgs::msg::PointCloud2 full_cloud_msg;
-    // pcl::toROSMsg(combined_cloud_, full_cloud_msg);
-    // full_cloud_msg.header.frame_id = "map";
-    // full_cloud_msg.header.stamp = get_clock()->now();
-    // full_cloud_publisher_->publish(full_cloud_msg);
+    sensor_msgs::msg::PointCloud2 full_cloud_msg;
+    pcl::toROSMsg(full_cloud_, full_cloud_msg);
+    full_cloud_msg.header.frame_id = "map";
+    full_cloud_msg.header.stamp = get_clock()->now();
+    full_cloud_publisher_->publish(full_cloud_msg);
 
     sensor_msgs::msg::PointCloud2 object_cloud_msg;
     pcl::toROSMsg(*clouds_.at(iterator), object_cloud_msg);
