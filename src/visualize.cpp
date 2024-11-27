@@ -5,8 +5,8 @@
 
 #include <sensor_msgs/msg/point_cloud2.hpp>
 #include <visualization_msgs/msg/detail/marker_array__struct.hpp>
-#include <visualization_msgs/msg/marker_array.hpp>
 #include <visualization_msgs/msg/marker.hpp>
+#include <visualization_msgs/msg/marker_array.hpp>
 
 #include <filesystem>
 
@@ -45,6 +45,10 @@ public:
       create_publisher<sensor_msgs::msg::PointCloud2>("full_cloud", 10);
     object_cloud_publisher_ =
       create_publisher<sensor_msgs::msg::PointCloud2>("object_clouds", 10);
+    box_publisher_ = create_publisher<visualization_msgs::msg::MarkerArray>(
+      "bounding_boxes", 10);
+    label_publisher_ = create_publisher<visualization_msgs::msg::MarkerArray>(
+      "labels", 10);
 
     // define timer
     timer_ =
@@ -72,21 +76,8 @@ private:
             RCLCPP_ERROR_STREAM(get_logger(), "Error loading file " << file);
             return false;
           } else {
-            RCLCPP_INFO_STREAM(get_logger(), "Loaded object with "
-                                               << cloud->size() << " points");
-            RCLCPP_INFO_STREAM(get_logger(),
-                               "file name: " << file.path().string());
-            RCLCPP_INFO_STREAM(get_logger(),
-                               "point color: "
-                                 << std::to_string(cloud->points[0].r) << " "
-                                 << std::to_string(cloud->points[0].g) << " "
-                                 << std::to_string(cloud->points[0].b));
-            RCLCPP_INFO_STREAM(get_logger(),
-                               "next point color: "
-                                 << std::to_string(cloud->points[1].r) << " "
-                                 << std::to_string(cloud->points[1].g) << " "
-                                 << std::to_string(cloud->points[1].b));
-            clouds_.push_back(cloud);
+            std::string file_name = file.path().stem();
+            clouds_.push_back({file_name, cloud});
           }
         }
         objects++;
@@ -107,12 +98,13 @@ private:
   void combine_clouds()
   {
     for (const auto &cloud : clouds_) {
-      combined_cloud_ += *cloud;
-      bounding_boxes_.push_back(calculate_box(*cloud));
+      combined_cloud_ += *cloud.second;
+      bounding_boxes_.push_back(calculate_box(*cloud.second));
     }
   }
 
-  std::vector<geometry_msgs::msg::Point> calculate_box(pcl::PointCloud<pcl::PointXYZRGB> &cloud)
+  std::vector<geometry_msgs::msg::Point>
+  calculate_box(pcl::PointCloud<pcl::PointXYZRGB> &cloud)
   {
     Box box;
     for (const auto &point : cloud) {
@@ -129,49 +121,66 @@ private:
     top_right_front.x = box.x_max;
     top_right_front.y = box.y_min;
     top_right_front.z = box.z_max;
-    points.push_back(top_right_front);
 
     geometry_msgs::msg::Point top_right_back;
     top_right_back.x = box.x_max;
     top_right_back.y = box.y_max;
     top_right_back.z = box.z_max;
-    points.push_back(top_right_back);
 
     geometry_msgs::msg::Point top_left_back;
     top_left_back.x = box.x_min;
     top_left_back.y = box.y_max;
     top_left_back.z = box.z_max;
-    points.push_back(top_left_back);
 
     geometry_msgs::msg::Point top_left_front;
     top_left_front.x = box.x_min;
     top_left_front.y = box.y_min;
     top_left_front.z = box.z_max;
-    points.push_back(top_left_front);
 
     geometry_msgs::msg::Point bottom_left_front;
     bottom_left_front.x = box.x_min;
     bottom_left_front.y = box.y_min;
     bottom_left_front.z = box.z_min;
-    points.push_back(bottom_left_front);
 
     geometry_msgs::msg::Point bottom_right_front;
     bottom_right_front.x = box.x_max;
     bottom_right_front.y = box.y_min;
     bottom_right_front.z = box.z_min;
-    points.push_back(bottom_right_front);
 
     geometry_msgs::msg::Point bottom_right_back;
     bottom_right_back.x = box.x_max;
     bottom_right_back.y = box.y_max;
     bottom_right_back.z = box.z_min;
-    points.push_back(bottom_right_back);
 
     geometry_msgs::msg::Point bottom_left_back;
     bottom_left_back.x = box.x_min;
     bottom_left_back.y = box.y_max;
     bottom_left_back.z = box.z_min;
+
+    points.push_back(top_right_front);
+    points.push_back(top_right_back);
+    points.push_back(top_right_back);
+    points.push_back(top_left_back);
+    points.push_back(top_left_back);
+    points.push_back(top_left_front);
+    points.push_back(top_left_front);
+    points.push_back(top_right_front);
+    points.push_back(top_right_front);
+    points.push_back(bottom_right_front);
+    points.push_back(bottom_right_front);
+    points.push_back(bottom_right_back);
+    points.push_back(bottom_right_back);
     points.push_back(bottom_left_back);
+    points.push_back(bottom_left_back);
+    points.push_back(bottom_left_front);
+    points.push_back(bottom_left_front);
+    points.push_back(bottom_right_front);
+    points.push_back(top_right_back);
+    points.push_back(bottom_right_back);
+    points.push_back(top_left_back);
+    points.push_back(bottom_left_back);
+    points.push_back(top_left_front);
+    points.push_back(bottom_left_front);
 
     return points;
   }
@@ -185,7 +194,7 @@ private:
     full_cloud_publisher_->publish(full_cloud_msg);
 
     sensor_msgs::msg::PointCloud2 object_cloud_msg;
-    pcl::toROSMsg(*clouds_.at(iterator), object_cloud_msg);
+    pcl::toROSMsg(*clouds_.at(iterator).second, object_cloud_msg);
     object_cloud_msg.header.frame_id = "map";
     object_cloud_msg.header.stamp = get_clock()->now();
     object_cloud_publisher_->publish(object_cloud_msg);
@@ -198,8 +207,49 @@ private:
       box_marker.id = i;
       box_marker.action = visualization_msgs::msg::Marker::ADD;
       box_marker.points = bounding_boxes_.at(i);
-      box_marker.type = visualization_msgs::msg::Marker::LINE_STRIP;
+      box_marker.type = visualization_msgs::msg::Marker::LINE_LIST;
+      box_marker.scale.x = 0.01;
+      box_marker.color.r = 1.0;
+      box_marker.color.a = 1.0;
+      box_markers.markers.push_back(box_marker);
     }
+    box_publisher_->publish(box_markers);
+
+    int iter = 0;
+    visualization_msgs::msg::MarkerArray label_markers;
+    for (const auto &cloud : clouds_) {
+      // calculate the centroid
+      pcl::PointXYZRGB centroid;
+      for (const auto &point : *cloud.second) {
+        centroid.x += point.x;
+        centroid.y += point.y;
+        centroid.z += point.z;
+      }
+      centroid.x /= cloud.second->size();
+      centroid.y /= cloud.second->size();
+      centroid.z /= cloud.second->size();
+
+      std::string label = cloud.first;
+      visualization_msgs::msg::Marker label_marker;
+      label_marker.header.frame_id = "map";
+      label_marker.header.stamp = get_clock()->now();
+      label_marker.id = iter;
+      label_marker.action = visualization_msgs::msg::Marker::ADD;
+      label_marker.type = visualization_msgs::msg::Marker::TEXT_VIEW_FACING;
+      label_marker.text = label;
+      label_marker.pose.position.x = centroid.x;
+      label_marker.pose.position.y = centroid.y;
+      label_marker.pose.position.z = centroid.z;
+      label_marker.scale.z = 0.1;
+      label_marker.color.r = 1.0;
+      label_marker.color.g = 1.0;
+      label_marker.color.b = 1.0;
+      label_marker.color.a = 1.0;
+      label_markers.markers.push_back(label_marker);
+
+      iter++;
+    }
+    label_publisher_->publish(label_markers);
 
     iterator++;
     iterator = iterator == clouds_.size() ? 0 : iterator;
@@ -210,8 +260,13 @@ private:
     full_cloud_publisher_;
   rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr
     object_cloud_publisher_;
+  rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr
+    box_publisher_;
+  rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr
+    label_publisher_;
 
-  std::vector<pcl::PointCloud<pcl::PointXYZRGB>::Ptr> clouds_;
+  std::vector<std::pair<std::string, pcl::PointCloud<pcl::PointXYZRGB>::Ptr>>
+    clouds_;
   std::vector<std::vector<geometry_msgs::msg::Point>> bounding_boxes_;
   pcl::PointCloud<pcl::PointXYZRGB> combined_cloud_;
   pcl::PointCloud<pcl::PointXYZRGB> full_cloud_;
