@@ -11,3 +11,4 @@ videos/
 *.pcd
 occupancy_grids/
 images/
+output/

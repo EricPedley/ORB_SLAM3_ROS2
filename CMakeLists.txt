@@ -1,8 +1,9 @@
 cmake_minimum_required(VERSION 3.8)
 project(orb_slam3_ros2)
+cmake_policy(SET CMP0074 NEW) # suppress pcl warning
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
-set(ENV{PYTHONPATH} "/opt/ros/humble/lib/python3.10/site-packages/")
+set(PYBIND11_FINDPYTHON ON)
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} ${CMAKE_CURRENT_SOURCE_DIR}/CMakeModules)
 
 if(NOT CMAKE_BUILD_TYPE)        # If no build type is set, set one
@@ -14,22 +15,15 @@ if(NOT CMAKE_CXX_STANDARD)
 endif()
 
 if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
-  add_compile_options(-Wall -Wextra -Wpedantic)
+    add_compile_options(-Wall -Wno-reorder -Wno-unused-parameter
+        -Wno-deprecated-declarations -Wno-sign-compare)
 endif()
 
-set(ENV{PROJECT_PATH} "${PROJECT_SOURCE_DIR}")
 add_definitions(-DPROJECT_PATH="${PROJECT_SOURCE_DIR}")
-add_definitions(${PCL_DEFINITIONS})
-
-set(USER_HOME $ENV{HOME})
-# set(CMAKE_PREFIX_PATH "${USER_HOME}/.local/include/libpointmatcher/share/libpointmatcher/cmake;${CMAKE_PREFIX_PATH}")
 
 # find dependencies
 find_package(ament_cmake REQUIRED)
-find_package(ament_cmake_python REQUIRED)
 find_package(rclcpp REQUIRED)
-find_package(rclpy REQUIRED)
-find_package(std_msgs REQUIRED)
 find_package(std_srvs REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(visualization_msgs REQUIRED)
@@ -45,21 +39,15 @@ find_package(pcl_ros REQUIRED)
 find_package(pcl_conversions REQUIRED)
 find_package(PCL 1.12 REQUIRED)
 
+find_package(pybind11 CONFIG REQUIRED)
 find_package(RTABMap REQUIRED)
 find_package(imu_filter_madgwick REQUIRED)
 find_package(yaml-cpp REQUIRED)
 find_package(nav2_map_server REQUIRED)
 find_package(ORB_SLAM3 REQUIRED)
 
-if(ORB_SLAM3_LIBRARY)
-    message("Found ORB_SLAM3: ${ORB_SLAM3_LIBRARY}")
-else()
-    message("Could not find ORB_SLAM3 library")
-endif()
-
 set(THIS_PACKAGE_INCLUDE_DEPENDS
   rclcpp
-  std_msgs
   std_srvs
   sensor_msgs
   visualization_msgs
@@ -82,19 +70,11 @@ add_executable(imu_mono_node_cpp
   src/imu_mono_realsense.cpp
 )
 
-add_executable(orb_camera_info_node
-  src/orb_camera_info.cpp
-)
-
 add_executable(visualize_node
   src/visualize.cpp
 )
 
 ament_target_dependencies(imu_mono_node_cpp
-  PUBLIC ${THIS_PACKAGE_INCLUDE_DEPENDS}
-)
-
-ament_target_dependencies(orb_camera_info_node
   PUBLIC ${THIS_PACKAGE_INCLUDE_DEPENDS}
 )
 
@@ -117,10 +97,8 @@ target_include_directories(imu_mono_node_cpp PUBLIC
 
 target_link_libraries(imu_mono_node_cpp PUBLIC ${ORB_SLAM3_LIBRARY} ${PCL_LIBRARIES}
     ${libpointmatcher_LIBRARIES} ${libpointmatcher_ros_LIBRARIES} rtabmap::rtabmap)
-target_link_libraries(orb_camera_info_node PUBLIC yaml-cpp)
-target_link_libraries(orb_camera_info_node PUBLIC ${PCL_LIBRARIES})
 
-install(TARGETS imu_mono_node_cpp orb_camera_info_node visualize_node
+install(TARGETS imu_mono_node_cpp visualize_node
     DESTINATION lib/${PROJECT_NAME}
 )
 
@@ -152,25 +130,30 @@ install(
   DESTINATION share/${PROJECT_NAME}/config
 )
 
-install(
-  DIRECTORY clouds/
-  DESTINATION share/${PROJECT_NAME}/clouds
-)
-
-install(
-  DIRECTORY database_outputs/
-  DESTINATION share/${PROJECT_NAME}/database_outputs
-)
-
-install(
-    DIRECTORY occupancy_grids/
-    DESTINATION share/${PROJECT_NAME}/occupancy_grids
-)
-
 # install launch files
 install(
-  DIRECTORY launch/
-  DESTINATION share/${PROJECT_NAME}/launch
+    DIRECTORY launch/
+    DESTINATION share/${PROJECT_NAME}/launch
+)
+
+# install(
+#   DIRECTORY clouds/
+#   DESTINATION share/${PROJECT_NAME}/clouds
+# )
+#
+# install(
+#   DIRECTORY database_outputs/
+#   DESTINATION share/${PROJECT_NAME}/database_outputs
+# )
+#
+# install(
+#     DIRECTORY occupancy_grids/
+#     DESTINATION share/${PROJECT_NAME}/occupancy_grids
+# )
+
+install(
+    DIRECTORY output/
+    DESTINATION share/${PROJECT_NAME}/output
 )
 
 if(BUILD_TESTING)

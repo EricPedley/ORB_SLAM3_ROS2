@@ -7,10 +7,6 @@
 #  e.g. `set( ORB_SLAM3_ROOT_DIR=~/ORB_SLAM3) `
 set(ORB_SLAM3_ROOT_DIR ${CMAKE_CURRENT_SOURCE_DIR}/ORB_SLAM3)
 
-message(${ORB_SLAM3_ROOT_DIR})
-message(${ORB_SLAM3_ROOT_DIR}/include)
-message(${ORB_SLAM3_ROOT_DIR}/Thirdparty/DBoW2/DBoW2)
-
 # Find built-in DBoW2
 # Find ORB_SLAM3
 find_path(ORB_SLAM3_INCLUDE_DIR NAMES System.h
@@ -18,12 +14,6 @@ find_path(ORB_SLAM3_INCLUDE_DIR NAMES System.h
 
 find_library(ORB_SLAM3_LIBRARY NAMES ORB_SLAM3 libORB_SLAM3
              PATHS ${ORB_SLAM3_ROOT_DIR}/lib)
-
-if(ORB_SLAM3_LIBRARY)
-    message("Found ORB_SLAM3: ${ORB_SLAM3_LIBRARY}")
-else()
-    message("Could not find ORB_SLAM3 library")
-endif()
 
 find_path(DBoW2_INCLUDE_DIR NAMES Thirdparty/DBoW2/DBoW2/BowVector.h
           PATHS ${ORB_SLAM3_ROOT_DIR})
