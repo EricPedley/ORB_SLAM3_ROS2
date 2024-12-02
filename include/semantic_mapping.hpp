@@ -8,10 +8,10 @@
 #include <sophus/se3.hpp>
 #include <yaml-cpp/yaml.h>
 
-#include <random>
 #include <filesystem>
 #include <iostream>
 #include <map>
+#include <random>
 #include <string>
 #include <tuple>
 
@@ -145,7 +145,7 @@ public:
   }
 
   std::pair<cv::Mat, std::map<std::pair<int, int>, int>>
-  project_cloud_to_camera(const cv::Size &image_size,
+  project_cloud_to_camera(const cv::Mat &image,
                           const cv::Mat &camera_matrix,
                           const pcl::PointCloud<pcl::PointXYZRGB>::Ptr cloud,
                           const Sophus::SE3f &camera_transform)
@@ -160,7 +160,7 @@ public:
     float cx = camera_matrix.at<double>(0, 2);
     float cy = camera_matrix.at<double>(1, 2);
 
-    cv::Mat registered = cv::Mat::zeros(image_size, CV_32FC1);
+    cv::Mat registered = cv::Mat::zeros(image.size(), CV_32FC1);
     Sophus::SE3f t = camera_transform.inverse();
 
     // create a map from each pixel to the index of their point in the
@@ -168,10 +168,10 @@ public:
     std::map<std::pair<int, int>, int> pixel_to_point_map;
 
     int count = 0;
-    for (pcl::PointCloud<pcl::PointXYZRGB>::const_iterator it = cloud->begin();
+    for (pcl::PointCloud<pcl::PointXYZRGB>::iterator it = cloud->begin();
          it != cloud->end(); ++it) {
       pcl::PointXYZRGB ptScan = *it;
-      // ptScan = rtabmap::util3d::transformPoint(ptScan, t);
+      // transform the current point into the camera frame
       Eigen::Vector3f transformed_point =
         t * Eigen::Vector3f(ptScan.x, ptScan.y, ptScan.z);
 
@@ -197,6 +197,10 @@ public:
             (dy_low > 0 && dy_low <= registered.rows)) {
           set = true;
           float &zReg = registered.at<float>(dy_low, dx_low);
+          // color the point in the point cloud with the pixel color
+          it->r = image.at<cv::Vec3b>(dy_low, dx_low)[2];
+          it->g = image.at<cv::Vec3b>(dy_low, dx_low)[1];
+          it->b = image.at<cv::Vec3b>(dy_low, dx_low)[0];
           if (zReg == 0 || z < zReg) {
             zReg = z;
           }
@@ -206,6 +210,9 @@ public:
             (dy_high > 0 && dy_high <= registered.rows)) {
           set = true;
           float &zReg = registered.at<float>(dy_high, dx_high);
+          it->r = image.at<cv::Vec3b>(dy_low, dx_low)[2];
+          it->g = image.at<cv::Vec3b>(dy_low, dx_low)[1];
+          it->b = image.at<cv::Vec3b>(dy_low, dx_low)[0];
           if (zReg == 0 || z < zReg) {
             zReg = z;
           }

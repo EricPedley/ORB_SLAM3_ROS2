@@ -43,14 +43,14 @@
 
 #include <cv_bridge/cv_bridge.h>
 
-  // this is orb_slam3
+// this is orb_slam3
 #include "System.h"
 
 #include <rclcpp/rclcpp.hpp>
 
-  namespace py = pybind11;
-  using namespace std::chrono_literals;
-  using std::placeholders::_1;
+namespace py = pybind11;
+using namespace std::chrono_literals;
+using std::placeholders::_1;
 
 class ImuMonoRealSense : public rclcpp::Node {
 public:
@@ -184,6 +184,13 @@ public:
       py::object YOLO = yolov8.attr("YOLO");
       py::object net = YOLO("yolov8m.pt");
 
+      pcl::PointCloud<pcl::PointXYZRGB>::Ptr live_ptr =
+        std::make_shared<pcl::PointCloud<pcl::PointXYZRGB>>(live_pcl_cloud_);
+
+      pcl::PointCloud<pcl::PointXYZRGB>::Ptr filtered_cloud_ptr(
+        new pcl::PointCloud<pcl::PointXYZRGB>);
+      pcl::copyPointCloud(*filter_point_cloud(live_ptr), *filtered_cloud_ptr);
+
       // std::vector<Object> objects = semantic_mapping(
       //   net, result_.mapping_data, *live_pcl_cloud_, timestamp_);
       std::string output_path =
@@ -203,22 +210,22 @@ public:
   }
 
 private:
-  pcl::PointCloud<pcl::PointXYZ>::Ptr
-  filter_point_cloud(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud)
+  pcl::PointCloud<pcl::PointXYZRGB>::Ptr
+  filter_point_cloud(pcl::PointCloud<pcl::PointXYZRGB>::Ptr cloud)
   {
     // statistical outlier removal
-    pcl::PointCloud<pcl::PointXYZ>::Ptr sor_cloud(
-      new pcl::PointCloud<pcl::PointXYZ>);
-    pcl::StatisticalOutlierRemoval<pcl::PointXYZ> sor;
+    pcl::PointCloud<pcl::PointXYZRGB>::Ptr sor_cloud(
+      new pcl::PointCloud<pcl::PointXYZRGB>);
+    pcl::StatisticalOutlierRemoval<pcl::PointXYZRGB> sor;
     sor.setInputCloud(cloud);
     sor.setMeanK(100);
     sor.setStddevMulThresh(0.1);
     sor.filter(*sor_cloud);
 
     // radius outlier removal
-    pcl::PointCloud<pcl::PointXYZ>::Ptr radius_cloud(
-      new pcl::PointCloud<pcl::PointXYZ>);
-    pcl::RadiusOutlierRemoval<pcl::PointXYZ> radius_outlier;
+    pcl::PointCloud<pcl::PointXYZRGB>::Ptr radius_cloud(
+      new pcl::PointCloud<pcl::PointXYZRGB>);
+    pcl::RadiusOutlierRemoval<pcl::PointXYZRGB> radius_outlier;
     radius_outlier.setInputCloud(sor_cloud);
     radius_outlier.setRadiusSearch(
       0.1); // Adjust based on spacing in the point cloud
@@ -230,11 +237,11 @@ private:
   }
 
   nav_msgs::msg::OccupancyGrid::SharedPtr
-  point_cloud_to_occupancy_grid(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud)
+  point_cloud_to_occupancy_grid(pcl::PointCloud<pcl::PointXYZRGB>::Ptr cloud)
   {
     // calculate the centroid
     Eigen::Matrix<float, 4, 1> centroid;
-    pcl::ConstCloudIterator<pcl::PointXYZ> cloud_iterator(*cloud);
+    pcl::ConstCloudIterator<pcl::PointXYZRGB> cloud_iterator(*cloud);
     pcl::compute3DCentroid(cloud_iterator, centroid);
 
     float max_x = -std::numeric_limits<float>::infinity();
@@ -508,13 +515,14 @@ private:
       live_map_tf.child_frame_id = "live_map";
       tf_broadcaster->sendTransform(live_map_tf);
 
-      live_pcl_cloud_ = orb_slam3_system_->GetMapPCL();
+      pcl::copyPointCloud(orb_slam3_system_->GetMapPCL(), live_pcl_cloud_);
+      // live_pcl_cloud_ = orb_slam3_system_->GetMapPCL();
 
-      pcl::PointCloud<pcl::PointXYZ>::Ptr live_ptr =
-        std::make_shared<pcl::PointCloud<pcl::PointXYZ>>(live_pcl_cloud_);
+      pcl::PointCloud<pcl::PointXYZRGB>::Ptr live_ptr =
+        std::make_shared<pcl::PointCloud<pcl::PointXYZRGB>>(live_pcl_cloud_);
 
-      pcl::PointCloud<pcl::PointXYZ>::Ptr filtered_cloud_ptr(
-        new pcl::PointCloud<pcl::PointXYZ>);
+      pcl::PointCloud<pcl::PointXYZRGB>::Ptr filtered_cloud_ptr(
+        new pcl::PointCloud<pcl::PointXYZRGB>);
       filtered_cloud_ptr = filter_point_cloud(live_ptr);
 
       filtered_cloud_ptr->width = filtered_cloud_ptr->points.size();
@@ -586,7 +594,7 @@ private:
   std::string settings_file_path;
 
   sensor_msgs::msg::PointCloud2 live_pcl_cloud_msg_;
-  pcl::PointCloud<pcl::PointXYZ> live_pcl_cloud_;
+  pcl::PointCloud<pcl::PointXYZRGB> live_pcl_cloud_;
   nav_msgs::msg::OccupancyGrid::SharedPtr live_occupancy_grid_;
 
   bool inertial_ba1_;
