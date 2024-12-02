@@ -38,9 +38,11 @@ find_package(Pangolin REQUIRED)
 find_package(pcl_ros REQUIRED)
 find_package(pcl_conversions REQUIRED)
 find_package(PCL 1.12 REQUIRED)
+find_package(OpenCV 4.5.4 REQUIRED)
 
 find_package(pybind11 CONFIG REQUIRED)
-find_package(RTABMap REQUIRED)
+find_package(Python3 COMPONENTS Development Interpreter REQUIRED)
+
 find_package(imu_filter_madgwick REQUIRED)
 find_package(yaml-cpp REQUIRED)
 find_package(nav2_map_server REQUIRED)
@@ -60,9 +62,11 @@ set(THIS_PACKAGE_INCLUDE_DEPENDS
   pcl_ros
   pcl_conversions
   Pangolin
-  # imu_filter_madgwick
   yaml-cpp
   nav2_map_server
+  pybind11
+  Python3
+  OpenCV
   ORB_SLAM3
 )
 
@@ -95,8 +99,7 @@ target_include_directories(imu_mono_node_cpp PUBLIC
     ${ORB_SLAM3_INCLUDE_DIR}
 )
 
-target_link_libraries(imu_mono_node_cpp PUBLIC ${ORB_SLAM3_LIBRARY} ${PCL_LIBRARIES}
-    ${libpointmatcher_LIBRARIES} ${libpointmatcher_ros_LIBRARIES} rtabmap::rtabmap)
+target_link_libraries(imu_mono_node_cpp PUBLIC ${ORB_SLAM3_LIBRARY} ${PCL_LIBRARIES})
 
 install(TARGETS imu_mono_node_cpp visualize_node
     DESTINATION lib/${PROJECT_NAME}

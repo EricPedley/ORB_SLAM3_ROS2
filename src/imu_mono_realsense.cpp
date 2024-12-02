@@ -1,4 +1,3 @@
-#include <geometry_msgs/msg/detail/transform_stamped__struct.hpp>
 #include <pcl/PCLPointCloud2.h>
 #include <pcl/cloud_iterator.h>
 #include <pcl/common/centroid.h>
@@ -16,11 +15,11 @@
 #include <geometry_msgs/msg/pose_array.hpp>
 #include <geometry_msgs/msg/quaternion.hpp>
 #include <geometry_msgs/msg/vector3.hpp>
+#include <geometry_msgs/msg/transform_stamped.hpp>
 #include <nav_msgs/msg/occupancy_grid.hpp>
 #include <nav_msgs/msg/odometry.hpp>
 #include <rclcpp/callback_group.hpp>
 #include <rclcpp/logging.hpp>
-#include <rmw/qos_profiles.h>
 #include <sensor_msgs/msg/image.hpp>
 #include <sensor_msgs/msg/imu.hpp>
 #include <sensor_msgs/msg/point_cloud2.hpp>
@@ -31,7 +30,6 @@
 
 #include "nav2_map_server/map_io.hpp"
 
-#include <chrono>
 #include <sstream>
 
 #include <cv_bridge/cv_bridge.h>
@@ -42,7 +40,7 @@
 #include <rclcpp/rclcpp.hpp>
 
 using namespace std::chrono_literals;
-using std::placeholders::_1, std::placeholders::_2;
+using std::placeholders::_1;
 
 class ImuMonoRealSense : public rclcpp::Node {
 public:
@@ -58,8 +56,8 @@ public:
     declare_parameter("use_pangolin", true);
 
     // get parameters
-    sensor_type_param = get_parameter("sensor_type").as_string();
-    use_pangolin = get_parameter("use_pangolin").as_bool();
+    get_parameter("sensor_type", sensor_type_param);
+    get_parameter("use_pangolin", use_pangolin);
 
     // define callback groups
     image_callback_group_ =
