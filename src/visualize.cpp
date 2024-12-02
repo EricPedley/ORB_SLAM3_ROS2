@@ -10,7 +10,7 @@
 
 #include <filesystem>
 
-#include "rclcpp/rclcpp.hpp"
+#include <rclcpp/rclcpp.hpp>
 
 using namespace std::chrono_literals;
 
@@ -28,10 +28,10 @@ public:
   Visualize() : Node("visualize"), iterator(0)
   {
     // declare parameters
-    declare_parameter("database_output_name", "");
+    declare_parameter("output_file_name", "");
 
     // get parameters
-    get_parameter("database_output_name", database_output_name_);
+    get_parameter("output_file_name", output_file_name_);
 
     if (!load_clouds()) {
       RCLCPP_ERROR(get_logger(), "Error loading clouds");
@@ -59,7 +59,7 @@ private:
   bool load_clouds()
   {
     std::string output_path =
-      std::string(PROJECT_PATH) + "/database_outputs/" + database_output_name_;
+      std::string(PROJECT_PATH) + "/output/" + output_file_name_;
     if (!std::filesystem::is_directory(output_path)) {
       RCLCPP_ERROR_STREAM(get_logger(),
                           "Directory " << output_path << " does not exist");
@@ -85,7 +85,7 @@ private:
       RCLCPP_INFO_STREAM(get_logger(), "Loaded " << objects << " objects");
     }
     std::string cloud_path =
-      output_path + "/cloud/" + database_output_name_ + ".pcd";
+      output_path + "/cloud/" + output_file_name_ + ".pcd";
     if (pcl::io::loadPCDFile(cloud_path, full_cloud_) == -1) {
       RCLCPP_ERROR_STREAM(get_logger(), "Error loading file " << cloud_path);
       return false;
@@ -270,7 +270,7 @@ private:
   std::vector<std::vector<geometry_msgs::msg::Point>> bounding_boxes_;
   pcl::PointCloud<pcl::PointXYZRGB> combined_cloud_;
   pcl::PointCloud<pcl::PointXYZRGB> full_cloud_;
-  std::string database_output_name_;
+  std::string output_file_name_;
   std::string cloud_path_;
   int iterator;
 };
