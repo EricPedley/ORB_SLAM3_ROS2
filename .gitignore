@@ -4,7 +4,6 @@
 *.db3
 metadata.yaml
 **build**
-ORBvoc.txt
 bags/
 videos/
 **ORBvoc.txt**
