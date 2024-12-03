@@ -32,6 +32,7 @@
 #include "nav2_map_server/map_io.hpp"
 
 #include <chrono>
+#include <filesystem>
 #include <sstream>
 
 #include <cv_bridge/cv_bridge.h>
@@ -134,15 +135,34 @@ public:
       100ms, std::bind(&ImuMonoRealSense::timer_callback, this),
       timer_callback_group_);
 
+    timestamp_ = generate_timestamp_string();
+
+    std::string path = std::string(PROJECT_PATH) + "/output/" + timestamp_;
+    if (!std::filesystem::create_directory(path)) {
+      std::cout << "Failed to create output directory" << std::endl;
+      return;
+    }
+    if (!std::filesystem::create_directory(path + "/cloud")) {
+      std::cout << "Failed to create cloud directory" << std::endl;
+      return;
+    }
+    if (!std::filesystem::create_directory(path + "/grid")) {
+      std::cout << "Failed to create grid directory" << std::endl;
+      return;
+    }
+    if (!std::filesystem::create_directory(path + "/video")) {
+      std::cout << "Failed to create images directory" << std::endl;
+      return;
+    }
+
     rclcpp::on_shutdown([this]() {
       video_writer_.release();
-      pcl::io::savePCDFileBinary(std::string(PROJECT_PATH) + "/maps/" +
-                                   generate_timestamp_string() + ".pcd",
+      pcl::io::savePCDFileBinary(std::string(PROJECT_PATH) + "/output/" +
+                                   timestamp_ + "/cloud/" + timestamp_ + ".pcd",
                                  live_pcl_cloud_);
       nav2_map_server::SaveParameters save_params;
-      save_params.map_file_name = std::string(PROJECT_PATH) +
-                                  "/occupancy_grids/" +
-                                  generate_timestamp_string();
+      save_params.map_file_name = std::string(PROJECT_PATH) + "/output/" +
+                                  timestamp_ + "/grid/" + timestamp_;
       save_params.image_format = "pgm";
       save_params.free_thresh = 0.196;
       save_params.occupied_thresh = 0.65;
@@ -151,11 +171,13 @@ public:
 
     initialize_variables();
 
-    std::string orb_slam_video_path = std::string(PROJECT_PATH) + "/videos/" +
-                                      generate_timestamp_string() + ".mp4";
+    std::string orb_slam_video_path = std::string(PROJECT_PATH) + "/output/" +
+                                      timestamp_ + "/video/" + timestamp_ +
+                                      ".mp4";
+    RCLCPP_INFO_STREAM(get_logger(), "Video path: " << orb_slam_video_path);
     video_writer_.open(orb_slam_video_path,
                        cv::VideoWriter::fourcc('m', 'p', '4', 'v'), 30,
-                       cv::Size(640, 480));
+                       cv::Size(640, 500));
 
     if (!video_writer_.isOpened()) {
       RCLCPP_ERROR(get_logger(), "Error opening video writer");
@@ -344,9 +366,12 @@ private:
           if (vImuMeas.size() > 1) {
             auto Tcw =
               orb_slam3_system_->TrackMonocular(imageFrame, tImage, vImuMeas);
-            video_writer_.write(orb_slam3_system_->getPrettyFrame());
-            cv::imshow("ORB-SLAM3", orb_slam3_system_->getPrettyFrame());
-            cv::waitKey(1);
+            cv::Mat pretty_frame = orb_slam3_system_->getPrettyFrame();
+            RCLCPP_INFO_STREAM(get_logger(),
+                               "pretty frame size: " << pretty_frame.size());
+            video_writer_.write(pretty_frame);
+            // cv::imshow("ORB-SLAM3", pretty_frame);
+            // cv::waitKey(1);
             Tcw_.translation() = Tcw.translation();
             Tcw_.setQuaternion(Tcw.unit_quaternion());
           }
@@ -556,6 +581,7 @@ private:
   Sophus::SE3f Tcw_;
 
   cv::VideoWriter video_writer_;
+  std::string timestamp_;
 };
 
 int main(int argc, char *argv[])
