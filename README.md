@@ -72,8 +72,8 @@ You can record and play back rosbags with arguments to the launch file:
 
 'bag_name':
     The name of the bag if record_bag is true. By default, the name of the bag
-    will be ORB_SLAM3_YYYY-MM-DD_HH-mm-ss
-    (default: 'ORB_SLAM3_YYYY-MM-DD_HH-mm-ss')
+    will be ORB_SLAM3_YYYY-MM-DD_hh-mm-ss
+    (default: 'ORB_SLAM3_YYYY-MM-DD_hh-mm-ss')
 
 'playback_bag':
     The rosbag to play during execution. If set, the realsense2_camera node
@@ -83,22 +83,15 @@ You can record and play back rosbags with arguments to the launch file:
 Bags are recorded to the ```bags``` directory. The playbag_back argument shouldn't
 be a full path to the bag, just the name of it.
 
-#### Localizing
-The localization launch file is capable of finding the tf from one occupancy
-grid to another. This is useful for localizing maps created by slam_toolbox or
-rtabmap in maps create by ORB_SLAM3. To find the tf between the occupancy grids
-I use ICP matching through libpointmatcher. The launch file is:
+### Visualizing The Map
+You can visualize outputs from ORB_SLAM3 or from [RTABMap_Semantic_Mapping](https://github.com/gjcliff/RTABMap_Semantic_Mapping) with
+the command:
 ```sh
-ros2 launch orb_slam3_ros2 localize.launch.xml
+ros2 launch orb_slam3_ros2 visualize.launch.py output_file_name:=<output_file_name>
 ```
-You must provide the following argument in order to run localization:
-```sh
-'reference_map_file':
-    The reference map file to localize against
-    (default: 'changeme.pcd')
-```
-This should just be the map file's name, not the full path. Maybe obviously,
-you can use maps created by running mapping.launch.py as the reference map file.
+These files should be placed in the ```output/``` directory if you are copying
+them from RTABMap_Semantic_Mapping, and if you are running the ORB_SLAM3 node
+then they'll automatically be placed in the ```output/``` directory for you.
 
 ### Troubleshooting
 1. ORB_SLAM3 keeps resetting the map on its own.
