@@ -8,6 +8,11 @@ to run ORB_SLAM3 on a dataset using ROS 2, I suggest you look at other repositor
 This project is only set up for monocular and imu-monocular modes in orb_slam3
 at the moment. I can add stereo and RGBD modes if there is interest.
 
+### Table of Contents
+1. [Building the project](#building-the-project)
+2. [Running the project](#running-the-project)
+3. [Troubleshooting](#troubleshooting)
+
 ### Building the project
 
 #### Setting up your workspace
@@ -50,6 +55,9 @@ source install/setup.bash
 ### Running the project
 
 There are multiple ways to use this project.
+
+#### Building Docker
+TODO
 
 #### ORB_SLAM3
 
