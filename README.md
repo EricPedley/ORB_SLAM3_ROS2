@@ -2,11 +2,12 @@
 Implementing ORB_SLAM3 in ROS 2 humble with some bonus features.
 
 This repository is meant for running ORB_SLAM3 in ROS 2 humble with a D435i Realsense
-camera. Eventually, support for any camera+imu setup will be added. If you're looking
-to run ORB_SLAM3 on a dataset using ROS 2, I suggest you look at other repositories.
+camera. If you're looking to run ORB_SLAM3 on a dataset using ROS 2, I suggest
+you look at other repositories.
 
 This project is only set up for monocular and imu-monocular modes in orb_slam3
-at the moment. I can add stereo and RGBD modes if there is interest.
+at the moment. I will add support for stereo and RGB-D modes in the next few
+weeks (from today, 2024-12-03).
 
 ### Building the project
 
