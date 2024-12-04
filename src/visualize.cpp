@@ -194,7 +194,7 @@ private:
     full_cloud_publisher_->publish(full_cloud_msg);
 
     sensor_msgs::msg::PointCloud2 object_cloud_msg;
-    pcl::toROSMsg(*clouds_.at(iterator).second, object_cloud_msg);
+    pcl::toROSMsg(combined_cloud_, object_cloud_msg);
     object_cloud_msg.header.frame_id = "map";
     object_cloud_msg.header.stamp = get_clock()->now();
     object_cloud_publisher_->publish(object_cloud_msg);
@@ -240,7 +240,7 @@ private:
       label_marker.pose.position.x = centroid.x;
       label_marker.pose.position.y = centroid.y;
       label_marker.pose.position.z = centroid.z;
-      label_marker.scale.z = 0.1;
+      label_marker.scale.z = 0.25;
       label_marker.color.r = 1.0;
       label_marker.color.g = 1.0;
       label_marker.color.b = 1.0;
