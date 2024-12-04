@@ -361,21 +361,19 @@ private:
 
       try {
         if (sensor_type_param == "monocular") {
-          orb_slam3_system_->TrackMonocular(imageFrame, tImage);
+          auto Tcw = orb_slam3_system_->TrackMonocular(imageFrame, tImage);
+          Tcw_.translation() = Tcw.translation();
+          Tcw_.setQuaternion(Tcw.unit_quaternion());
         } else {
           if (vImuMeas.size() > 1) {
             auto Tcw =
               orb_slam3_system_->TrackMonocular(imageFrame, tImage, vImuMeas);
-            cv::Mat pretty_frame = orb_slam3_system_->getPrettyFrame();
-            RCLCPP_INFO_STREAM(get_logger(),
-                               "pretty frame size: " << pretty_frame.size());
-            video_writer_.write(pretty_frame);
-            // cv::imshow("ORB-SLAM3", pretty_frame);
-            // cv::waitKey(1);
             Tcw_.translation() = Tcw.translation();
             Tcw_.setQuaternion(Tcw.unit_quaternion());
           }
         }
+        cv::Mat pretty_frame = orb_slam3_system_->getPrettyFrame();
+        video_writer_.write(pretty_frame);
 
       } catch (const std::exception &e) {
         RCLCPP_ERROR(get_logger(), "SLAM processing exception: %s", e.what());
