@@ -1,5 +1,7 @@
 #include <pcl/impl/point_types.hpp>
 #include <pcl/io/pcd_io.h>
+#include <pcl/io/ply_io.h>
+#include <pcl/io/obj_io.h>
 #include <pcl/point_cloud.h>
 #include <pcl_conversions/pcl_conversions.h>
 
@@ -47,8 +49,8 @@ public:
       create_publisher<sensor_msgs::msg::PointCloud2>("object_clouds", 10);
     box_publisher_ = create_publisher<visualization_msgs::msg::MarkerArray>(
       "bounding_boxes", 10);
-    label_publisher_ = create_publisher<visualization_msgs::msg::MarkerArray>(
-      "labels", 10);
+    label_publisher_ =
+      create_publisher<visualization_msgs::msg::MarkerArray>("labels", 10);
 
     // define timer
     timer_ =
@@ -92,6 +94,18 @@ private:
     }
     RCLCPP_INFO_STREAM(get_logger(), "Loaded full cloud with "
                                        << full_cloud_.size() << " points");
+
+    // std::string mesh_path = output_path + "/meshes/" + output_file_name_ + ".ply";
+    // if (pcl::io::loadPLYFile(mesh_path, full_cloud_) == -1) {
+    //   RCLCPP_ERROR_STREAM(get_logger(), "Error loading file " << mesh_path);
+    //   // return false;
+    // }
+
+    // std::string mesh_path2 = output_path + "/meshes/" + output_file_name_ + "_mesh.obj";
+    // if (pcl::io::loadOBJFile(mesh_path2, full_cloud_) == -1) {
+    //   RCLCPP_ERROR_STREAM(get_logger(), "Error loading file " << mesh_path2);
+    //   // return false;
+    // }
     return true;
   }
 
@@ -240,7 +254,7 @@ private:
       label_marker.pose.position.x = centroid.x;
       label_marker.pose.position.y = centroid.y;
       label_marker.pose.position.z = centroid.z;
-      label_marker.scale.z = 0.25;
+      label_marker.scale.z = 0.5;
       label_marker.color.r = 1.0;
       label_marker.color.g = 1.0;
       label_marker.color.b = 1.0;
