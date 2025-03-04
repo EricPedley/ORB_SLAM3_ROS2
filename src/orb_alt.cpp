@@ -2,7 +2,7 @@
 #include <geometry_msgs/msg/pose_array.hpp>
 #include <geometry_msgs/msg/quaternion.hpp>
 #include <geometry_msgs/msg/vector3.hpp>
-#include <nav_msgs/msg/occupancy_grid.hpp>
+#include <librealsense2/h/rs_sensor.h>
 #include <nav_msgs/msg/odometry.hpp>
 #include <pcl/PCLPointCloud2.h>
 #include <pcl/cloud_iterator.h>
@@ -11,13 +11,13 @@
 #include <pcl/filters/filter.h>
 #include <pcl/filters/radius_outlier_removal.h>
 #include <pcl/filters/statistical_outlier_removal.h>
-#include <pcl/filters/voxel_grid.h>
 #include <pcl/io/pcd_io.h>
 #include <pcl/io/ply_io.h>
 #include <pcl/point_cloud.h>
 #include <pcl_conversions/pcl_conversions.h>
 #include <pcl_ros/transforms.hpp>
 #include <rclcpp/callback_group.hpp>
+#include <rclcpp/context.hpp>
 #include <rclcpp/logging.hpp>
 #include <rclcpp/utilities.hpp>
 #include <rmw/qos_profiles.h>
@@ -31,8 +31,6 @@
 
 #include <yaml-cpp/yaml.h>
 
-#include <chrono>
-#include <ctime>
 #include <filesystem>
 #include <iostream>
 #include <sstream>
@@ -87,12 +85,11 @@ static rs2_option get_sensor_option(const rs2::sensor &sensor)
   return static_cast<rs2_option>(selected_sensor_option);
 }
 
-class OrbCameraInfo : public rclcpp::Node {
+class OrbAlt : public rclcpp::Node {
 public:
-  OrbCameraInfo() : Node("orb_camera_info_node")
+  OrbAlt() : Node("orb_alt")
   {
-    timer_ =
-      create_wall_timer(33ms, std::bind(&OrbCameraInfo::timer_callback, this));
+    timer_ = create_wall_timer(5ms, std::bind(&OrbAlt::timer_callback, this));
 
     // declare parameters
     declare_parameter("sensor_type", "imu-monocular");
@@ -103,7 +100,6 @@ public:
     use_pangolin = get_parameter("use_pangolin").as_bool();
 
     // set the sensor type based on parameter
-    ORB_SLAM3::System::eSensor sensor_type;
     vocabulary_file_path_ =
       std::string(PROJECT_PATH) + "/ORB_SLAM3/Vocabulary/ORBvoc.txt";
     if (sensor_type_param == "monocular") {
@@ -129,10 +125,8 @@ public:
     // create publishers
     live_point_cloud_publisher_ =
       create_publisher<sensor_msgs::msg::PointCloud2>("live_point_cloud", 10);
-    pose_array_publisher_ =
-      create_publisher<geometry_msgs::msg::PoseArray>("pose_array", 10);
-    orb_image_publisher_ =
-      create_publisher<sensor_msgs::msg::Image>("/orb_camera/image", 10);
+    // orb_image_publisher_ =
+    //   create_publisher<sensor_msgs::msg::Image>("/orb_camera/image", 10);
 
     // tf broadcaster
     tf_broadcaster = std::make_unique<tf2_ros::TransformBroadcaster>(*this);
@@ -140,42 +134,48 @@ public:
     // create timer
     timestamp_ = generate_timestamp_string();
 
-    std::string path = std::string(PROJECT_PATH) + "/output/" + timestamp_;
-    if (!std::filesystem::create_directory(path)) {
+    output_path_ = std::string(PROJECT_PATH) + "/output/" + timestamp_;
+    if (!std::filesystem::create_directory(output_path_)) {
       std::cout << "Failed to create output directory" << std::endl;
       return;
     }
-    if (!std::filesystem::create_directory(path + "/cloud")) {
+    if (!std::filesystem::create_directory(output_path_ + "/cloud")) {
       std::cout << "Failed to create cloud directory" << std::endl;
       return;
     }
-    if (!std::filesystem::create_directory(path + "/grid")) {
-      std::cout << "Failed to create grid directory" << std::endl;
-      return;
-    }
-    if (!std::filesystem::create_directory(path + "/video")) {
+    if (!std::filesystem::create_directory(output_path_ + "/images")) {
       std::cout << "Failed to create images directory" << std::endl;
       return;
     }
+    if (!std::filesystem::create_directory(output_path_ + "/poses")) {
+      std::cout << "Failed to create poses directory" << std::endl;
+      return;
+    }
 
-    rclcpp::on_shutdown([this]() {
-      video_writer_.release();
-      pcl::io::savePCDFileBinary(std::string(PROJECT_PATH) + "/output/" +
-                                   timestamp_ + "/cloud/" + timestamp_ + ".pcd",
-                                 live_pcl_cloud_);
-    });
+    rclcpp::Context::SharedPtr context =
+      get_node_base_interface()->get_context();
 
-    pose_array_ = geometry_msgs::msg::PoseArray();
-    pose_array_.header.frame_id = "live_map";
+    auto rcl_preshutdown_cb_handle_ =
+      std::make_unique<rclcpp::PreShutdownCallbackHandle>(
+        context->add_pre_shutdown_callback(
+          std::bind(&OrbAlt::preshutdown, this)));
 
-    live_pcl_cloud_msg_ = sensor_msgs::msg::PointCloud2();
-    live_pcl_cloud_msg_.header.frame_id = "live_map";
-
-    setup_img_writer();
     setup_realsense();
   }
 
 private:
+  void preshutdown()
+  {
+    RCLCPP_INFO(get_logger(), "Shutting down ROS 2");
+    pcl::PointCloud<pcl::PointXYZ> cloud = SLAM->GetMapPCL();
+    RCLCPP_INFO_STREAM(get_logger(), "cloud size: " << cloud.size());
+    pcl::io::savePCDFileBinary(output_path_ + "/cloud/" + timestamp_ + ".pcd",
+                               cloud);
+    std::ofstream fout(output_path_ + "/poses/" + timestamp_ + ".yaml");
+    fout << poses_;
+    fout.close();
+  }
+
   rs2_vector interpolate_measure(const double target_time,
                                  const rs2_vector current_data,
                                  const double current_time,
@@ -212,63 +212,10 @@ private:
 
     return value_interp;
   }
-  void setup_img_writer()
-  {
-    std::string orb_slam_video_path = std::string(PROJECT_PATH) + "/output/" +
-                                      timestamp_ + "/video/" + timestamp_ +
-                                      ".mp4";
 
-    RCLCPP_INFO_STREAM(get_logger(), "Video path: " << orb_slam_video_path);
-    video_writer_.open(orb_slam_video_path,
-                       cv::VideoWriter::fourcc('m', 'p', '4', 'v'), 30,
-                       cv::Size(640, 500));
-
-    if (!video_writer_.isOpened()) {
-      RCLCPP_ERROR(get_logger(), "Error opening video writer");
-      rclcpp::shutdown();
-    }
-  }
   void setup_realsense()
   {
-    devices = ctx.query_devices();
-    if (devices.size() == 0) {
-      std::cerr << "No device connected, please connect a RealSense device"
-                << std::endl;
-      rclcpp::shutdown();
-    } else
-      selected_device = devices[0];
-
-    sensors = selected_device.query_sensors();
     int index = 0;
-    // We can now iterate the sensors and print their names
-    for (rs2::sensor sensor : sensors)
-      if (sensor.supports(RS2_CAMERA_INFO_NAME)) {
-        ++index;
-        if (index == 1) {
-          sensor.set_option(RS2_OPTION_ENABLE_AUTO_EXPOSURE, 1);
-          sensor.set_option(RS2_OPTION_AUTO_EXPOSURE_LIMIT, 5000);
-          sensor.set_option(RS2_OPTION_EMITTER_ENABLED,
-                            0); // switch off emitter
-        }
-        // std::cout << "  " << index << " : " <<
-        // sensor.get_info(RS2_CAMERA_INFO_NAME) << std::endl;
-        get_sensor_option(sensor);
-        if (index == 2) {
-          // RGB camera (not used here...)
-          sensor.set_option(RS2_OPTION_EXPOSURE, 100.f);
-        }
-
-        if (index == 3) {
-          sensor.set_option(RS2_OPTION_ENABLE_MOTION_CORRECTION, 0);
-        }
-      }
-
-    // Declare RealSense pipeline, encapsulating the actual device and sensors
-    // Create a configuration for configuring the pipeline with a non default
-    // profile
-    cfg.enable_stream(RS2_STREAM_INFRARED, 1, 640, 480, RS2_FORMAT_Y8, 30);
-    cfg.enable_stream(RS2_STREAM_ACCEL, RS2_FORMAT_MOTION_XYZ32F);
-    cfg.enable_stream(RS2_STREAM_GYRO, RS2_FORMAT_MOTION_XYZ32F);
 
     devices = ctx.query_devices();
     if (devices.size() == 0) {
@@ -280,9 +227,12 @@ private:
 
     sensors = selected_device.query_sensors();
     // We can now iterate the sensors and print their names
-    for (rs2::sensor sensor : sensors)
+    for (rs2::sensor sensor : sensors) {
       if (sensor.supports(RS2_CAMERA_INFO_NAME)) {
         ++index;
+        RCLCPP_INFO_STREAM(get_logger(), "sensorfdsa: " << sensor.get_info(
+                                           RS2_CAMERA_INFO_NAME));
+        RCLCPP_INFO_STREAM(get_logger(), "index: " << index);
         if (index == 1) {
           sensor.set_option(RS2_OPTION_ENABLE_AUTO_EXPOSURE, 1);
           sensor.set_option(RS2_OPTION_AUTO_EXPOSURE_LIMIT, 5000);
@@ -301,11 +251,15 @@ private:
           sensor.set_option(RS2_OPTION_ENABLE_MOTION_CORRECTION, 0);
         }
       }
+    }
 
     // Declare RealSense pipeline, encapsulating the actual device and sensors
     // Create a configuration for configuring the pipeline with a non default
     // profile
+    // Enabling the depth stream and using it for the mono8 image is faster, and
+    // doesn't require a conversion from RGB to mono8 in the future.
     cfg.enable_stream(RS2_STREAM_INFRARED, 1, 640, 480, RS2_FORMAT_Y8, 30);
+    cfg.enable_stream(RS2_STREAM_COLOR, 640, 480, RS2_FORMAT_BGR8, 30);
     cfg.enable_stream(RS2_STREAM_ACCEL, RS2_FORMAT_MOTION_XYZ32F);
     cfg.enable_stream(RS2_STREAM_GYRO, RS2_FORMAT_MOTION_XYZ32F);
 
@@ -323,9 +277,13 @@ private:
           return;
         }
 
-        rs2::video_frame color_frame = fs.get_infrared_frame();
+        rs2::video_frame color_frame = fs.get_color_frame();
+        rs2::video_frame infrared_frame = fs.get_infrared_frame();
+        imCV_color =
+          cv::Mat(cv::Size(width_img, height_img), CV_8UC3,
+                  (void *)(color_frame.get_data()), cv::Mat::AUTO_STEP);
         imCV = cv::Mat(cv::Size(width_img, height_img), CV_8U,
-                       (void *)(color_frame.get_data()), cv::Mat::AUTO_STEP);
+                       (void *)(infrared_frame.get_data()), cv::Mat::AUTO_STEP);
 
         timestamp_image = fs.get_timestamp() * 1e-3;
         image_ready = true;
@@ -392,6 +350,7 @@ private:
     v_accel_data_sync.clear();
     v_accel_timestamp_sync.clear();
   }
+
   std::string generate_timestamp_string()
   {
     std::time_t now = std::time(nullptr);
@@ -403,18 +362,12 @@ private:
 
     return oss.str();
   }
+
   void timer_callback()
   {
 
     double timestamp;
     cv::Mat im;
-
-
-    // while (!SLAM->isShutDown()) {
-    // std::vector<rs2_vector> vGyro;
-    // std::vector<double> vGyro_times;
-    // std::vector<rs2_vector> vAccel;
-    // std::vector<double> vAccel_times;
 
     {
       std::unique_lock<std::mutex> lk(imu_mutex);
@@ -469,7 +422,34 @@ private:
     }
 
     // Pass the image to the SLAM system
-    SLAM->TrackMonocular(im, timestamp, vImuMeas);
+    std::shared_ptr<Sophus::SE3f> Tcw;
+    if (sensor_type == ORB_SLAM3::System::MONOCULAR) {
+      Tcw = std::make_shared<Sophus::SE3f>(SLAM->TrackMonocular(im, timestamp));
+    } else if (sensor_type == ORB_SLAM3::System::IMU_MONOCULAR) {
+      Tcw = std::make_shared<Sophus::SE3f>(
+        SLAM->TrackMonocular(im, timestamp, vImuMeas));
+    }
+
+    // save image
+    // cv::Mat pretty = SLAM->getPrettyFrame();
+    if (!imCV_color.empty()) {
+      cv::imwrite(output_path_ + "/images/" + std::to_string(img_iter_) +
+                    ".jpg",
+                  imCV_color);
+    }
+
+    // save pose
+    Eigen::Matrix4f transformation_matrix = Tcw->inverse().matrix();
+    YAML::Node matrix;
+    for (int i = 0; i < 4; i++) {
+      std::vector<float> row;
+      for (int j = 0; j < 4; j++) {
+        row.push_back(transformation_matrix(i, j));
+      }
+      matrix.push_back(row);
+    }
+    poses_["Twc_" + std::to_string(img_iter_)] = matrix;
+    img_iter_++;
 
     // Clear the previous IMU measurements to load the new ones
     vImuMeas.clear();
@@ -486,8 +466,8 @@ private:
   std::string vocabulary_file_path_;
   std::string settings_file_path_;
 
-  cv::VideoWriter video_writer_; // i want to save individual images
   std::string timestamp_;
+  std::string output_path_;
 
   rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr
     live_point_cloud_publisher_;
@@ -510,6 +490,7 @@ private:
 
   std::mutex imu_mutex;
   vector<ORB_SLAM3::IMU::Point> vImuMeas;
+  ORB_SLAM3::System::eSensor sensor_type;
   std::condition_variable cond_image_rec;
   vector<double> v_accel_timestamp;
   vector<rs2_vector> v_accel_data;
@@ -529,6 +510,7 @@ private:
   std::vector<double> vAccel_times;
 
   cv::Mat imCV;
+  cv::Mat imCV_color;
   int width_img, height_img;
   double timestamp_image = -1.0;
   bool image_ready = false;
@@ -536,13 +518,15 @@ private:
   float imageScale;
 
   double offset = 0; // ms
-  int index = 0;
+                     //
+  YAML::Node poses_;
+  int img_iter_;
 };
 
 int main(int argc, char *argv[])
 {
   rclcpp::init(argc, argv);
-  rclcpp::spin(std::make_shared<OrbCameraInfo>());
+  rclcpp::spin(std::make_shared<OrbAlt>());
   rclcpp::shutdown();
   return 0;
 }
