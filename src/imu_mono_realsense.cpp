@@ -505,10 +505,11 @@ private:
       filtered_cloud_ptr->width = filtered_cloud_ptr->points.size();
       pcl::toROSMsg(*filtered_cloud_ptr, live_pcl_cloud_msg_);
 
-      live_occupancy_grid_ = point_cloud_to_occupancy_grid(filtered_cloud_ptr);
-      live_occupancy_grid_->header.stamp = time_now;
-      live_occupancy_grid_->header.frame_id = "live_map";
-      live_occupancy_grid_publisher_->publish(*live_occupancy_grid_);
+      // this can go
+      // live_occupancy_grid_ = point_cloud_to_occupancy_grid(filtered_cloud_ptr);
+      // live_occupancy_grid_->header.stamp = time_now;
+      // live_occupancy_grid_->header.frame_id = "live_map";
+      // live_occupancy_grid_publisher_->publish(*live_occupancy_grid_);
 
       live_pcl_cloud_msg_.header.stamp = time_now;
       live_pcl_cloud_msg_.header.frame_id = "live_map";

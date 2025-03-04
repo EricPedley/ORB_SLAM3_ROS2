@@ -69,11 +69,6 @@ def generate_launch_description():
                         default, the name of the bag will be\
                         ORB_SLAM3_YYYY-MM-DD_HH-mm-ss",
             ),
-            DeclareLaunchArgument(
-                "rtabmap_db",
-                default_value="",
-                description="The path to the RTAB-Map database file.",
-            ),
             IncludeLaunchDescription(
                 PythonLaunchDescriptionSource(
                     PathJoinSubstitution(
@@ -85,8 +80,10 @@ def generate_launch_description():
                     )
                 ),
                 launch_arguments={
-                    "initial_reset": "true",
+                    "namespace": "",
+                    "initial_reset": "false",
                     "rgb_camera.color_profile": "640x480x30",
+                    "rgb_camera.enable_auto_exposure": "true",
                     "enable_accel": "true",
                     "enable_gyro": "true",
                     "unite_imu_method": "2",

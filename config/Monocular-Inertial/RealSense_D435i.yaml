@@ -14,10 +14,15 @@ loopClosing: 0
 # Camera1.cx: 642.9407348632812
 # Camera1.cy: 371.1956787109375
 
-Camera1.fx: 614.67170934
-Camera1.fy: 617.63448453
-Camera1.cx: 326.22132726
-Camera1.cy: 245.58281905
+# Camera1.fx: 614.67170934
+# Camera1.fy: 617.63448453
+# Camera1.cx: 326.22132726
+# Camera1.cy: 245.58281905
+
+Camera1.fx: 382.613
+Camera1.fy: 382.613
+Camera1.cx: 320.183
+Camera1.cy: 236.455
 
 # distortion parameters
 Camera1.k1: 0.0
@@ -59,13 +64,13 @@ IMU.Frequency: 200.0
 # ORB Parameters
 #--------------------------------------------------------------------------------------------
 # ORB Extractor: Number of features per image
-ORBextractor.nFeatures: 2000
+ORBextractor.nFeatures: 1250
 
 # ORB Extractor: Scale factor between levels in the scale pyramid
 ORBextractor.scaleFactor: 1.2
 
 # ORB Extractor: Number of levels in the scale pyramid
-ORBextractor.nLevels: 10
+ORBextractor.nLevels: 8 # 10
 
 # ORB Extractor: Fast threshold
 # Image is divided in a grid. At each cell FAST are extracted imposing a minimum response.

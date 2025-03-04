@@ -44,12 +44,14 @@ find_package(Pangolin REQUIRED)
 find_package(pcl_ros REQUIRED)
 find_package(pcl_conversions REQUIRED)
 find_package(PCL 1.12 REQUIRED)
+find_package(OpenCV REQUIRED)
 
-find_package(RTABMap REQUIRED)
-find_package(imu_filter_madgwick REQUIRED)
+# find_package(RTABMap REQUIRED)
+# find_package(imu_filter_madgwick REQUIRED)
 find_package(yaml-cpp REQUIRED)
 find_package(nav2_map_server REQUIRED)
 find_package(ORB_SLAM3 REQUIRED)
+find_package(realsense2)
 
 if(ORB_SLAM3_LIBRARY)
     message("Found ORB_SLAM3: ${ORB_SLAM3_LIBRARY}")
@@ -90,6 +92,10 @@ add_executable(visualize_node
   src/visualize.cpp
 )
 
+add_executable(orb_alt
+  src/orb_alt.cpp
+)
+
 ament_target_dependencies(imu_mono_node_cpp
   PUBLIC ${THIS_PACKAGE_INCLUDE_DEPENDS}
 )
@@ -102,6 +108,10 @@ ament_target_dependencies(visualize_node
   PUBLIC ${THIS_PACKAGE_INCLUDE_DEPENDS}
 )
 
+ament_target_dependencies(orb_alt
+  PUBLIC ${THIS_PACKAGE_INCLUDE_DEPENDS}
+)
+
 set(ORB_SLAM3_ROOT_DIR ${CMAKE_CURRENT_SOURCE_DIR}/ORB_SLAM3)
 
 include_directories(
@@ -109,18 +119,21 @@ include_directories(
     ${ORB_SLAM3_ROOT_DIR}/include/CameraModels
     ${ORB_SLAM3_ROOT_DIR}/Thirdparty/Sophus
     ${PCL_INCLUDE_DIRS}
+    ${realsense2_INCLUDE_DIR}
 )
 
 target_include_directories(imu_mono_node_cpp PUBLIC
-    ${ORB_SLAM3_INCLUDE_DIR}
+    ${ORB_SLAM3_INCLUDE_DIR} ${OpenCV_INCLUDE_DIRS}
 )
 
 target_link_libraries(imu_mono_node_cpp PUBLIC ${ORB_SLAM3_LIBRARY} ${PCL_LIBRARIES}
-    ${libpointmatcher_LIBRARIES} ${libpointmatcher_ros_LIBRARIES} rtabmap::rtabmap)
+    ${libpointmatcher_LIBRARIES} ${libpointmatcher_ros_LIBRARIES} ${OpenCV_LIBS})
 target_link_libraries(orb_camera_info_node PUBLIC yaml-cpp)
 target_link_libraries(orb_camera_info_node PUBLIC ${PCL_LIBRARIES})
+target_link_libraries(orb_alt PUBLIC ${ORB_SLAM3_LIBRARY} ${PCL_LIBRARIES} ${OpenCV_LIBS}
+    ${realsense2_LIBRARY})
 
-install(TARGETS imu_mono_node_cpp orb_camera_info_node visualize_node
+install(TARGETS imu_mono_node_cpp orb_camera_info_node visualize_node orb_alt
     DESTINATION lib/${PROJECT_NAME}
 )
 
