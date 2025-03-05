@@ -16,29 +16,37 @@ The first thing I will do is explain how I set up my ROS 2 workspace for this pr
 
 Make a directory for your ROS 2 workspace, then cd into it:
 ```sh
-mkdir ws && cd ws
+mkdir -p ws/src/ && cd ws/src/
 ```
-inside the ```ws``` directory, clone this repository and its submodules:
+inside the ```src``` directory, clone this repository and its submodules:
 ```sh
-git clone --recurse-submodules -b orb_slam3_ros2 https://github.com/gjcliff/ORB_SLAM3_ROS2.git
+git clone --recurse-submodules -b main https://github.com/gjcliff/ORB_SLAM3_ROS2.git
 ```
 #### Building ORB_SLAM3
 Next, we have to build orbslam3 and its dependencies.
 
-cd into the ORB_SLAM3 directory and run the ```build.sh``` script. Make sure the
+You need to install ORB_SLAM3's dependencies first. Go to [their repo](https://github.com/UZ-SLAMLab/ORB_SLAM3) and follow
+their instructions
+
+If you are compiling Pangolin on an Nvidia Jetson, you may need to go into
+Pangolin's CMakelists.txt file and remove the -Werror option from ```add_compile_options()```
+
+You can install eigen3 on Ubuntu 22.04 with
+```bash
+sudo apt install libeigen3-dev
+```
+and then create a symlink so that ORB_SLAM3 can find it:
+```bash
+sudo ln -s /usr/include/eigen3/Eigen/ /usr/include/Eigen/
+```
+
+Next, cd into the ORB_SLAM3 directory and run the ```build.sh``` script. Make sure the
 script has execute permissions.
 ```sh
 cd ORB_SLAM3_ROS2/ORB_SLAM3/
 ./build.sh
 ```
-Note: By default, ORB_SLAM3 calls for Eigen 3.1 for g2o, but Eigen 3.3 for itself.
-In order to accomplish this I installed Eigen 3.1 and 3.3 into a CMake prefix
-directory and manually include them. This is especially necessary for Eigen 3.1
-because it doesn't come with any CMake modules.
-
 TODO: Make a dockerfile for the project so that dependencies are set up by default.
-TODO: Make a guide for installing and using different versions of Eigen from CMake
-prefix directories.
 
 #### Building the ROS 2 project
 Now you can source ros humble, and the build the project. cd into your ROS 2

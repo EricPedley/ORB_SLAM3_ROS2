@@ -13,7 +13,7 @@ def generate_launch_description():
     return LaunchDescription(
         [
             DeclareLaunchArgument(
-                "database_output_name",
+                "output_name",
                 default_value="",
                 description="Name of the database output file.",
             ),
@@ -24,8 +24,8 @@ def generate_launch_description():
                 # prefix="xterm -e gdb --args",
                 parameters=[
                     {
-                        "database_output_name": LaunchConfiguration(
-                            "database_output_name"
+                        "output_name": LaunchConfiguration(
+                            "output_name"
                         ),
                     }
                 ],
