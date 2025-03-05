@@ -80,15 +80,15 @@ add_executable(visualize_node
   src/visualize.cpp
 )
 
-add_executable(orb_alt
-  src/orb_alt.cpp
+add_executable(orb_realsense_d435i
+  src/orb_realsense_d435i.cpp
 )
 
 ament_target_dependencies(visualize_node
   PUBLIC ${THIS_PACKAGE_INCLUDE_DEPENDS}
 )
 
-ament_target_dependencies(orb_alt
+ament_target_dependencies(orb_realsense_d435i
   PUBLIC ${THIS_PACKAGE_INCLUDE_DEPENDS}
 )
 
@@ -102,10 +102,10 @@ include_directories(
     ${realsense2_INCLUDE_DIR}
 )
 
-target_link_libraries(orb_alt PUBLIC ${ORB_SLAM3_LIBRARY} ${PCL_LIBRARIES} ${OpenCV_LIBS}
+target_link_libraries(orb_realsense_d435i PUBLIC ${ORB_SLAM3_LIBRARY} ${PCL_LIBRARIES} ${OpenCV_LIBS}
     ${realsense2_LIBRARY} yaml-cpp)
 
-install(TARGETS visualize_node orb_alt
+install(TARGETS visualize_node orb_realsense_d435i
     DESTINATION lib/${PROJECT_NAME}
 )
 

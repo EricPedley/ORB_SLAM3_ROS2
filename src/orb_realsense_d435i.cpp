@@ -84,11 +84,11 @@ static rs2_option get_sensor_option(const rs2::sensor &sensor)
   return static_cast<rs2_option>(selected_sensor_option);
 }
 
-class OrbAlt : public rclcpp::Node {
+class OrbRealsenseD435i : public rclcpp::Node {
 public:
-  OrbAlt() : Node("orb_alt")
+  OrbRealsenseD435i() : Node("orb_realsense_d435i")
   {
-    timer_ = create_wall_timer(5ms, std::bind(&OrbAlt::timer_callback, this));
+    timer_ = create_wall_timer(5ms, std::bind(&OrbRealsenseD435i::timer_callback, this));
 
     // declare parameters
     declare_parameter("sensor_type", "imu-monocular");
@@ -157,7 +157,7 @@ public:
     auto rcl_preshutdown_cb_handle_ =
       std::make_unique<rclcpp::PreShutdownCallbackHandle>(
         context->add_pre_shutdown_callback(
-          std::bind(&OrbAlt::preshutdown, this)));
+          std::bind(&OrbRealsenseD435i::preshutdown, this)));
 
     setup_realsense();
   }
@@ -525,7 +525,7 @@ private:
 int main(int argc, char *argv[])
 {
   rclcpp::init(argc, argv);
-  rclcpp::spin(std::make_shared<OrbAlt>());
+  rclcpp::spin(std::make_shared<OrbRealsenseD435i>());
   rclcpp::shutdown();
   return 0;
 }

@@ -12,17 +12,12 @@
   <depend>sensor_msgs</depend>
   <depend>tf2</depend>
   <depend>tf2_ros</depend>
-  <depend>octomap_server</depend>
   <depend>nav_msgs</depend>
-  <depend>apriltag</depend>
-  <depend>apriltag_ros</depend>
-  <depend>apriltag_msgs</depend>
   <depend>cv_bridge</depend>
   <depend>image_transport</depend>
   <depend>pcl_ros</depend>
   <depend>pcl_conversions</depend>
   <buildtool_depend>ament_cmake</buildtool_depend>
-  <buildtool_depend>ament_cmake_python</buildtool_depend>
 
   <depend>rclpy</depend>
 
