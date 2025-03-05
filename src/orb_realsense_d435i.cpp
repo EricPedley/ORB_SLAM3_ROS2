@@ -168,7 +168,7 @@ private:
     RCLCPP_INFO(get_logger(), "Shutting down ROS 2");
     pcl::PointCloud<pcl::PointXYZ> cloud = SLAM->GetMapPCL();
     RCLCPP_INFO_STREAM(get_logger(), "cloud size: " << cloud.size());
-    pcl::io::savePCDFileBinary(output_path_ + "/cloud/" + timestamp_ + ".pcd",
+    pcl::io::savePLYFileBinary(output_path_ + "/cloud/" + timestamp_ + ".ply",
                                cloud);
     std::ofstream fout(output_path_ + "/poses/" + timestamp_ + ".yaml");
     fout << poses_;
