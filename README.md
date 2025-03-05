@@ -31,6 +31,11 @@ their instructions
 If you are compiling Pangolin on an Nvidia Jetson, you may need to go into
 Pangolin's CMakelists.txt file and remove the -Werror option from ```add_compile_options()```
 
+After installing Pangolin:
+```bash
+sudo ldconfig
+```
+
 You can install eigen3 on Ubuntu 22.04 with
 ```bash
 sudo apt install libeigen3-dev
