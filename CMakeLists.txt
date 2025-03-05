@@ -137,21 +137,6 @@ install(
   DESTINATION share/${PROJECT_NAME}/config
 )
 
-install(
-  DIRECTORY clouds/
-  DESTINATION share/${PROJECT_NAME}/clouds
-)
-
-install(
-  DIRECTORY database_outputs/
-  DESTINATION share/${PROJECT_NAME}/database_outputs
-)
-
-install(
-    DIRECTORY occupancy_grids/
-    DESTINATION share/${PROJECT_NAME}/occupancy_grids
-)
-
 # install launch files
 install(
   DIRECTORY launch/
