@@ -35,7 +35,6 @@ find_package(sensor_msgs REQUIRED)
 find_package(visualization_msgs REQUIRED)
 find_package(tf2 REQUIRED)
 find_package(tf2_ros REQUIRED)
-find_package(nav_msgs REQUIRED)
 find_package(cv_bridge REQUIRED)
 find_package(realsense2_description REQUIRED)
 find_package(xacro REQUIRED)
@@ -49,7 +48,6 @@ find_package(OpenCV REQUIRED)
 # find_package(RTABMap REQUIRED)
 # find_package(imu_filter_madgwick REQUIRED)
 find_package(yaml-cpp REQUIRED)
-find_package(nav2_map_server REQUIRED)
 find_package(ORB_SLAM3 REQUIRED)
 find_package(realsense2)
 
@@ -67,7 +65,6 @@ set(THIS_PACKAGE_INCLUDE_DEPENDS
   visualization_msgs
   tf2
   tf2_ros
-  nav_msgs
   cv_bridge
   realsense2_description
   xacro
@@ -76,16 +73,7 @@ set(THIS_PACKAGE_INCLUDE_DEPENDS
   Pangolin
   # imu_filter_madgwick
   yaml-cpp
-  nav2_map_server
   ORB_SLAM3
-)
-
-add_executable(imu_mono_node_cpp
-  src/imu_mono_realsense.cpp
-)
-
-add_executable(orb_camera_info_node
-  src/orb_camera_info.cpp
 )
 
 add_executable(visualize_node
@@ -94,14 +82,6 @@ add_executable(visualize_node
 
 add_executable(orb_alt
   src/orb_alt.cpp
-)
-
-ament_target_dependencies(imu_mono_node_cpp
-  PUBLIC ${THIS_PACKAGE_INCLUDE_DEPENDS}
-)
-
-ament_target_dependencies(orb_camera_info_node
-  PUBLIC ${THIS_PACKAGE_INCLUDE_DEPENDS}
 )
 
 ament_target_dependencies(visualize_node
@@ -122,18 +102,10 @@ include_directories(
     ${realsense2_INCLUDE_DIR}
 )
 
-target_include_directories(imu_mono_node_cpp PUBLIC
-    ${ORB_SLAM3_INCLUDE_DIR} ${OpenCV_INCLUDE_DIRS}
-)
-
-target_link_libraries(imu_mono_node_cpp PUBLIC ${ORB_SLAM3_LIBRARY} ${PCL_LIBRARIES}
-    ${libpointmatcher_LIBRARIES} ${libpointmatcher_ros_LIBRARIES} ${OpenCV_LIBS})
-target_link_libraries(orb_camera_info_node PUBLIC yaml-cpp)
-target_link_libraries(orb_camera_info_node PUBLIC ${PCL_LIBRARIES})
 target_link_libraries(orb_alt PUBLIC ${ORB_SLAM3_LIBRARY} ${PCL_LIBRARIES} ${OpenCV_LIBS}
-    ${realsense2_LIBRARY})
+    ${realsense2_LIBRARY} yaml-cpp)
 
-install(TARGETS imu_mono_node_cpp orb_camera_info_node visualize_node orb_alt
+install(TARGETS visualize_node orb_alt
     DESTINATION lib/${PROJECT_NAME}
 )
 

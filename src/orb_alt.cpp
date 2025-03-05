@@ -3,7 +3,6 @@
 #include <geometry_msgs/msg/quaternion.hpp>
 #include <geometry_msgs/msg/vector3.hpp>
 #include <librealsense2/h/rs_sensor.h>
-#include <nav_msgs/msg/odometry.hpp>
 #include <pcl/PCLPointCloud2.h>
 #include <pcl/cloud_iterator.h>
 #include <pcl/common/centroid.h>
