@@ -117,7 +117,7 @@ public:
     image_qos.reliability(RMW_QOS_POLICY_RELIABILITY_RELIABLE);
     image_qos.durability(RMW_QOS_POLICY_DURABILITY_TRANSIENT_LOCAL);
     image_sub = create_subscription<sensor_msgs::msg::Image>(
-      "camera/camera/color/image_raw", image_qos,
+      "/camera/image_raw", image_qos,
       std::bind(&ImuMonoRealSense::image_callback, this, _1), image_options);
 
     rclcpp::QoS imu_qos(rclcpp::KeepLast(10));
@@ -348,36 +348,21 @@ private:
                         imuPtr->angular_velocity.z);
         vImuMeas.push_back(ORB_SLAM3::IMU::Point(acc, gyr, tIMU));
       }
-
+//   //
+//   //
       buf_mutex_imu_.unlock();
 
-      if (vImuMeas.empty() && sensor_type_param == "imu-monocular") {
-        // RCLCPP_WARN(get_logger(),
-        //             "No valid IMU data available for the current frame "
-        //             "at time %.6f.",
-        //             tImage);
-        return;
-      }
+      auto Tcw = orb_slam3_system_->TrackMonocular(imageFrame, tImage);
+      Tcw_.translation() = Tcw.translation();
+      Tcw_.setQuaternion(Tcw.unit_quaternion());
+      cv::Mat pretty_frame = orb_slam3_system_->getPrettyFrame();
+      video_writer_.write(pretty_frame);
+      // try {
+      //   // put above block back here when done
 
-      try {
-        if (sensor_type_param == "monocular") {
-          auto Tcw = orb_slam3_system_->TrackMonocular(imageFrame, tImage);
-          Tcw_.translation() = Tcw.translation();
-          Tcw_.setQuaternion(Tcw.unit_quaternion());
-        } else {
-          if (vImuMeas.size() > 1) {
-            auto Tcw =
-              orb_slam3_system_->TrackMonocular(imageFrame, tImage, vImuMeas);
-            Tcw_.translation() = Tcw.translation();
-            Tcw_.setQuaternion(Tcw.unit_quaternion());
-          }
-        }
-        cv::Mat pretty_frame = orb_slam3_system_->getPrettyFrame();
-        video_writer_.write(pretty_frame);
-
-      } catch (const std::exception &e) {
-        RCLCPP_ERROR(get_logger(), "SLAM processing exception: %s", e.what());
-      }
+      // } catch (const std::exception &e) {
+      //   RCLCPP_ERROR(get_logger(), "SLAM processing exception: %s", e.what());
+      // }
     }
   }
 
