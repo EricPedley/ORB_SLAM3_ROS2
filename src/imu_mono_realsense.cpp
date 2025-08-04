@@ -333,36 +333,15 @@ private:
 
       vector<ORB_SLAM3::IMU::Point> vImuMeas;
 
-      // package all the imu data for this image for orbslam3 to process
-      buf_mutex_imu_.lock();
-      while (!imu_buf_.empty()) {
-        auto imuPtr = imu_buf_.front();
-        imu_buf_.pop();
-        double tIMU =
-          imuPtr->header.stamp.sec + imuPtr->header.stamp.nanosec * 1e-9;
-
-        cv::Point3f acc(imuPtr->linear_acceleration.x,
-                        imuPtr->linear_acceleration.y,
-                        imuPtr->linear_acceleration.z);
-        cv::Point3f gyr(imuPtr->angular_velocity.x, imuPtr->angular_velocity.y,
-                        imuPtr->angular_velocity.z);
-        vImuMeas.push_back(ORB_SLAM3::IMU::Point(acc, gyr, tIMU));
+      try {
+        auto Tcw = orb_slam3_system_->TrackMonocular(imageFrame, tImage);
+        Tcw_.translation() = Tcw.translation();
+        Tcw_.setQuaternion(Tcw.unit_quaternion());
+        cv::Mat pretty_frame = orb_slam3_system_->getPrettyFrame();
+        video_writer_.write(pretty_frame);
+      } catch (const std::exception &e) {
+        RCLCPP_ERROR(get_logger(), "SLAM processing exception: %s", e.what());
       }
-//   //
-//   //
-      buf_mutex_imu_.unlock();
-
-      auto Tcw = orb_slam3_system_->TrackMonocular(imageFrame, tImage);
-      Tcw_.translation() = Tcw.translation();
-      Tcw_.setQuaternion(Tcw.unit_quaternion());
-      cv::Mat pretty_frame = orb_slam3_system_->getPrettyFrame();
-      video_writer_.write(pretty_frame);
-      // try {
-      //   // put above block back here when done
-
-      // } catch (const std::exception &e) {
-      //   RCLCPP_ERROR(get_logger(), "SLAM processing exception: %s", e.what());
-      // }
     }
   }
 
