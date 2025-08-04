@@ -82,11 +82,11 @@ public:
     if (sensor_type_param == "monocular") {
       sensor_type = ORB_SLAM3::System::MONOCULAR;
       settings_file_path =
-        std::string(PROJECT_PATH) + "/config/Monocular/RealSense_D435i.yaml";
+        std::string(PROJECT_PATH) + "/config/Monocular/MilkV.yaml";
     } else if (sensor_type_param == "imu-monocular") {
       sensor_type = ORB_SLAM3::System::IMU_MONOCULAR;
       settings_file_path = std::string(PROJECT_PATH) +
-                           "/config/Monocular-Inertial/RealSense_D435i.yaml";
+                           "/config/Monocular/MilkV.yaml";
     } else {
       RCLCPP_ERROR(get_logger(), "Sensor type not recognized");
       rclcpp::shutdown();
