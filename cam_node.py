@@ -2,6 +2,7 @@
 
 import rclpy
 from rclpy.node import Node
+from rclpy.qos import QoSProfile, ReliabilityPolicy, DurabilityPolicy
 from sensor_msgs.msg import Image
 from cv_bridge import CvBridge
 import cv2
@@ -13,7 +14,12 @@ class CameraPublisher(Node):
         super().__init__('camera_publisher')
         
         # Create publisher
-        self.publisher = self.create_publisher(Image, 'camera/image_raw', 10)
+        image_qos = QoSProfile(depth=10)
+        image_qos.reliability = ReliabilityPolicy.RELIABLE
+        image_qos.durability = DurabilityPolicy.TRANSIENT_LOCAL
+        
+        # Create publisher with QoS profile
+        self.publisher = self.create_publisher(Image, 'camera/image_raw', image_qos)
         
         # Create cv_bridge instance
         self.bridge = CvBridge()
@@ -33,7 +39,11 @@ class CameraPublisher(Node):
         if img is not None:
             try:
                 # Convert OpenCV image to ROS Image message
-                ros_image = self.bridge.cv2_to_imgmsg(img.get_array(), encoding='bgr8')
+                frame = img.get_array()
+                gray_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+                
+                # Convert OpenCV image to ROS Image message
+                ros_image = self.bridge.cv2_to_imgmsg(cv2.resize(gray_frame, (640, 480)), encoding='mono8')
                 
                 # Set timestamp
                 ros_image.header.stamp = self.get_clock().now().to_msg()
