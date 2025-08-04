@@ -55,7 +55,7 @@ public:
   {
 
     // declare parameters
-    declare_parameter("sensor_type", "imu-monocular");
+    declare_parameter("sensor_type", "monocular");
     declare_parameter("use_pangolin", true);
 
     // get parameters
