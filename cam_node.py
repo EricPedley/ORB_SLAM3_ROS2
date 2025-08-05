@@ -26,31 +26,29 @@ class CameraPublisher(Node):
         # Create cv_bridge instance
         self.bridge = CvBridge()
         
-        self.cam = RTSPCamera()
+        self.cam = RTSPCamera(url_str='192.168.1.210/h264', flip=True)
 
         self.cam_mat = np.array([[1028,0,609.03],[0,1028.4,397.99],[0,0,1]])
         self.dist_coeffs = np.array([[-0.35952,0.080321,0.001794,-0.001439,0.025185]])
 
-        self.undistorted_cam_mat, _ = cv2.getOptimalNewCameraMatrix(self.cam_mat, self.dist_coeffs, (1920, 1080), 0, (1920, 1080))
+        self.undistorted_cam_mat = self.cam_mat
+        # self.undistorted_cam_mat, _ = cv2.getOptimalNewCameraMatrix(self.cam_mat, self.dist_coeffs, (1920, 1080), 0.5, (1920, 1080))
+        # self.undistorted_cam_mat: np.ndarray = self.undistorted_cam_mat # type hinting
         self.m1, self.m2 = cv2.initUndistortRectifyMap(self.cam_mat, self.dist_coeffs, None, self.undistorted_cam_mat, (1920, 1080), cv2.CV_16SC2)
         
         # Create timer for publishing at ~30 FPS
         timer_period = 1.0 / 30.0  # 30 FPS
         self.timer = self.create_timer(timer_period, self.timer_callback)
 
-        info_timer_period = 1.0
-        self.info_timer = self.create_timer(info_timer_period, self.info_timer_callback)
 
         self.camera_info = CameraInfo()
-        self.camera_info.header.stamp = self.get_clock().now().to_msg()
-        self.camera_info.header.frame_id = 'map'
         self.camera_info.height = 1080
         self.camera_info.width = 1920
-        self.camera_info.distortion_model = "pinhole"
-        self.camera_info.k = [1028.0, 0.0, 609.03, 0.0, 1028.4, 397.99, 0.0, 0.0, 1.0]
-        self.camera_info.d = []
-        self.camera_info.r = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0]
-        self.camera_info.p = [1028.0, 0.0, 609.03, 0.0, 0.0, 1028.4, 397.99, 0.0, 0.0, 0.0, 1.0, 0.0]
+        self.camera_info.distortion_model = "plumb_bob"
+        self.camera_info.k = self.undistorted_cam_mat.flatten().tolist()
+        self.camera_info.d = self.dist_coeffs.flatten().tolist()
+        self.camera_info.r = np.eye(3).flatten().tolist()
+        self.camera_info.p = [self.undistorted_cam_mat[0,0], 0.0, self.undistorted_cam_mat[0,2], 0.0, 0.0, self.undistorted_cam_mat[1,1], self.undistorted_cam_mat[1,2], 0.0, 0.0, 0.0, 1.0, 0.0]
         
         self.get_logger().info('Camera publisher node started')
     
@@ -64,26 +62,27 @@ class CameraPublisher(Node):
                 frame = img.get_array()
                 # gray_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
                 # ros_image = self.bridge.cv2_to_imgmsg(cv2.resize(gray_frame, (640, 480)), encoding='mono8')
-                frame_undistorted = cv2.remap(frame, self.m1, self.m2, cv2.INTER_LINEAR)
+                # frame_undistorted = cv2.remap(frame, self.m1, self.m2, cv2.INTER_LINEAR)
+                # frame_undistorted = cv2.undistort(frame, self.cam_mat, self.dist_coeffs, None, self.undistorted_cam_mat)
+                frame_undistorted = frame
                 
                 # Convert OpenCV image to ROS Image message
-                ros_image = self.bridge.cv2_to_imgmsg(frame_undistorted, encoding='8UC3')
+                ros_image = self.bridge.cv2_to_imgmsg(frame_undistorted, encoding='bgr8')
                 
                 # Set timestamp
                 ros_image.header.stamp = self.get_clock().now().to_msg()
-                ros_image.header.frame_id = 'map'
+                ros_image.header.frame_id = 'camera_frame'
                 
                 # Publish the image
                 self.publisher.publish(ros_image)
+                self.camera_info.header = ros_image.header
+                self.info_publisher.publish(self.camera_info)
                 
             except Exception as e:
                 self.get_logger().error(f'Error converting/publishing image: {e}')
         else:
             self.get_logger().warn('Failed to capture frame')
     
-    def info_timer_callback(self):
-        self.info_publisher.publish(self.camera_info)
-
     def destroy_node(self):
         # Clean up resources
         if hasattr(self, 'cap') and self.cap.isOpened():
